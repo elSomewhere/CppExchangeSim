@@ -28,6 +28,9 @@
 
 // Forward Declarations
 namespace EventBusSystem {
+    template<typename...>
+        struct TypeList {};
+
     using Timestamp = std::chrono::time_point<std::chrono::steady_clock>;
     using Duration = std::chrono::steady_clock::duration;
     using AgentId = uint64_t;
@@ -239,10 +242,12 @@ namespace EventBusSystem {
     }
 
     // --- Forward declarations needed within the namespace ---
-    template<typename... EventTypes> class TopicBasedEventBus; // Forward declare Bus for IPrePublishHook
+    template<typename... EventTypes> class TopicBasedEventBus;
     template<typename... EventTypes> class IEventProcessor;
     template<typename Derived, typename... EventTypes> class EventProcessor;
-    template<typename... EventTypes> class IPrePublishHook; // Forward declare Hook for Bus
+    template<typename... EventTypes> class IPrePublishHook;
+    template<typename Derived, typename... EventTypes> class PrePublishHook;
+
 
     // --- Abstract Base Interface for Event Processors ---
     template<typename... EventTypes>
@@ -293,32 +298,104 @@ namespace EventBusSystem {
     template<typename... EventTypes>
     class IPrePublishHook {
     public:
-        // Reuse EventVariant from IEventProcessor for consistency
         using EventVariant = typename IEventProcessor<EventTypes...>::EventVariant;
 
         virtual ~IPrePublishHook() = default;
 
-        /**
-         * @brief Called synchronously within TopicBasedEventBus::publish, before the event
-         *        is fanned out to subscribers or scheduled.
-         * @param publisher_id The ID of the agent that called publish().
-         * @param published_topic_id The interned ID of the topic string.
-         * @param event_variant The event being published (as a variant of shared_ptr<const E>).
-         * @param publish_time The bus's current_time_ at the moment of the publish() call.
-         * @param bus A const pointer to the event bus instance, for context (e.g., resolving IDs).
-         */
         virtual void on_pre_publish(
                 AgentId publisher_id,
                 TopicId published_topic_id,
                 const EventVariant& event_variant,
                 Timestamp publish_time,
-                const TopicBasedEventBus<EventTypes...>* bus // Bus pointer for context
+                const TopicBasedEventBus<EventTypes...>* bus
         ) = 0;
 
         virtual std::string get_hook_name() const {
-            // Base implementation, can be overridden by concrete hooks for better logging.
             return "UnnamedPrePublishHook";
         }
+    };
+
+
+    // --- CRTP base for Pre-Publish Hooks - ALIGNED WITH EventProcessor ---
+    template<typename Derived, typename... EventTypes>
+    class PrePublishHook : public IPrePublishHook<EventTypes...> {
+    public:
+        using EventVariant   = typename IPrePublishHook<EventTypes...>::EventVariant;
+        using AgentId        = EventBusSystem::AgentId;
+        using TopicId        = EventBusSystem::TopicId;
+        using Timestamp      = EventBusSystem::Timestamp;
+        using BusT           = EventBusSystem::TopicBasedEventBus<EventTypes...>;
+
+        // final => may not be overridden by concrete hooks
+        void on_pre_publish(
+            EventBusSystem::AgentId          publisher_id,
+            EventBusSystem::TopicId          published_topic_id,
+            const EventVariant&              event_variant,
+            EventBusSystem::Timestamp        publish_time,
+            const BusT*                      bus
+        ) final override
+        {
+            std::visit(
+                [&](const auto& ev_ptr) {
+                    static_cast<Derived*>(this)->handle_pre_publish(
+                        *ev_ptr,
+                        publisher_id,
+                        published_topic_id,
+                        publish_time,
+                        bus
+                    );
+                },
+                event_variant
+            );
+        }
+
+        std::string get_hook_name() const override {
+            return static_cast<const Derived*>(this)->hook_name();
+        }
+
+    protected:
+        /*  Default fallback utility that concrete hooks must call from their
+            templated handle_pre_publish if no specific overload matches.
+            Mirrors EventProcessor’s handle_event_default().
+         */
+        template<typename E>
+        void handle_pre_publish_default(
+            const E& event,
+            AgentId publisher_id,
+            TopicId published_topic_id,
+            Timestamp publish_time,
+            const BusT* bus
+        ) {
+            // Default behavior is no-op.
+            // Optionally, log a message indicating default handling.
+            if (LoggerConfig::G_CURRENT_LOG_LEVEL <= LogLevel::DEBUG) {
+                std::string topic_str = bus ? bus->get_topic_string(published_topic_id) : "[No Bus]";
+                std::string hook_name_str = "UnnamedPrePublishHook"; // Default if hook_name() is not yet callable or complex
+                // Try to get actual hook name if possible, careful about virtual calls in constructors/destructors context
+                // However, this is called from a concrete derived type, so dynamic dispatch for hook_name() should be fine.
+                // For safety, ensure 'this' is fully constructed Derived type.
+                // As 'on_pre_publish' is final and calls Derived's handle_pre_publish,
+                // which in turn might call this, 'this' is indeed a 'Derived*'.
+                // So static_cast<const Derived*>(this)->hook_name() is safe here.
+                hook_name_str = static_cast<const Derived*>(this)->hook_name();
+
+
+                LogMessage(LogLevel::DEBUG, hook_name_str,
+                           "PrePublishHook '" + hook_name_str +
+                           "' received event type '" + std::string(typeid(E).name()) +
+                           "' but has NO specific handler. Using DEFAULT (noop) pre-publish handler. PubTopic='" + topic_str +
+                           "', PublisherID=" + std::to_string(publisher_id));
+            }
+        }
+        // Note: Derived classes are expected to implement:
+        // 1. std::string hook_name() const;
+        // 2. Specific overloads:
+        //    void handle_pre_publish(const SpecificEvent&, AgentId, TopicId, Timestamp, const BusT*);
+        // 3. A templated catch-all:
+        //    template<typename E>
+        //    void handle_pre_publish(const E& e, AgentId pub_id, TopicId top_id, Timestamp ts, const BusT* b) {
+        //        this->handle_pre_publish_default(e, pub_id, top_id, ts, b);
+        //    }
     };
 
 
@@ -330,7 +407,7 @@ namespace EventBusSystem {
         using ScheduledEvent = typename IEventProcessor<EventTypes...>::ScheduledEvent;
 
     protected:
-        TopicBasedEventBus<EventTypes...> *bus_ = nullptr;
+        TopicBasedEventBus<EventTypes...>* bus_ = nullptr;
         AgentId id_ = INVALID_AGENT_ID;
         std::vector<ScheduledEvent> reentrant_event_queue_;
         std::unordered_map<std::pair<StreamId, AgentId>, Timestamp, PairHasher> sub_stream_last_processed_ts_from_publisher_;
@@ -339,12 +416,15 @@ namespace EventBusSystem {
         template<typename E>
         void handle_event_default(const E &event, TopicId published_topic_id, AgentId publisher_id,
                                   Timestamp process_time, StreamId stream_id, SequenceNumber seq_num) {
+            std::string topic_str = bus_ ? bus_->get_topic_string(published_topic_id) : "[No Bus]";
+            std::string stream_str = bus_ ? bus_->get_stream_string(stream_id) : "[No Bus]";
             LogMessage(LogLevel::WARNING, this->get_logger_source(), "Agent " + std::to_string(id_) +
                                                                      " received event type '" + std::string(typeid(E).name()) +
-                                                                     "' but has NO specific handler. Using DEFAULT (noop) handler. PubTopic='" + get_topic_string(published_topic_id) +
-                                                                     "', Stream=" + get_stream_string(stream_id) +
+                                                                     "' but has NO specific handler. Using DEFAULT (noop) handler. PubTopic='" + topic_str +
+                                                                     "', Stream=" + stream_str +
                                                                      ", Seq=" + std::to_string(seq_num));
         }
+
 
     public:
         EventProcessor() : id_(INVALID_AGENT_ID) {}
@@ -471,7 +551,7 @@ namespace EventBusSystem {
         using EventVariant = typename IEventProcessor<EventTypes...>::EventVariant;
         using ScheduledEvent = typename IEventProcessor<EventTypes...>::ScheduledEvent;
         using ProcessorInterface = IEventProcessor<EventTypes...>;
-        using PrePublishHookInterface = IPrePublishHook<EventTypes...>; // Alias for convenience
+        using PrePublishHookInterface = IPrePublishHook<EventTypes...>;
 
     private:
         Timestamp current_time_;
@@ -492,9 +572,7 @@ namespace EventBusSystem {
         std::unordered_map<std::pair<AgentId, AgentId>, LatencyParameters, PairHasher> inter_agent_latency_config_;
         LatencyParameters default_latency_params_;
 
-        // --- MODIFICATION: Storage for Pre-Publish Hooks ---
         std::vector<PrePublishHookInterface*> pre_publish_hooks_;
-        // --- END MODIFICATION ---
 
 
         TrieNode *find_or_create_node(const std::string &topic_str, bool create_if_missing = true) {
@@ -654,13 +732,11 @@ namespace EventBusSystem {
                                                             ",Val:" + std::to_string(primary_val) + "us,Cap:" + std::to_string(params.max_cap_us) + "us)");
         }
 
-        // --- MODIFICATION: Pre-Publish Hook Management ---
         void register_pre_publish_hook(PrePublishHookInterface* hook) {
             if (!hook) {
                 LogMessage(LogLevel::WARNING, get_logger_source(), "Attempted to register a null pre-publish hook.");
                 return;
             }
-            // Avoid duplicate registrations
             if (std::find(pre_publish_hooks_.begin(), pre_publish_hooks_.end(), hook) != pre_publish_hooks_.end()) {
                 LogMessage(LogLevel::DEBUG, get_logger_source(), "Pre-publish hook '" + hook->get_hook_name() + "' is already registered. Ignoring.");
                 return;
@@ -682,7 +758,6 @@ namespace EventBusSystem {
                 LogMessage(LogLevel::WARNING, get_logger_source(), "Attempted to deregister a non-registered pre-publish hook: " + hook->get_hook_name());
             }
         }
-        // --- END MODIFICATION ---
 
 
         void register_entity_with_id(AgentId id, ProcessorInterface *entity) {
@@ -789,7 +864,7 @@ namespace EventBusSystem {
                     if (node->is_prunable()) prune_node_path(node);
                 }
                 if (auto it = agent_exact_subscriptions_.find(subscriber_id); it != agent_exact_subscriptions_.end()) {
-                    if (it->second.erase(topic_str) > 0) removed = true; // Could be redundant if node->subscribers.erase worked
+                    if (it->second.erase(topic_str) > 0) removed = true;
                     if (it->second.empty()) agent_exact_subscriptions_.erase(it);
                 }
             }
@@ -817,21 +892,19 @@ namespace EventBusSystem {
             }
             if (topic_str.empty()) { LogMessage(LogLevel::DEBUG, get_logger_source(), "Publishing to empty topic (root)."); }
 
-            // --- MODIFICATION: Pre-Publish Hook Invocation ---
             TopicId interned_topic_id_for_hook = string_interner_.intern(topic_str);
             Timestamp publish_time_for_hook = current_time_;
-            EventVariant event_variant_for_hook = event_ptr; // Construct variant once
+            EventVariant event_variant_for_hook = event_ptr;
 
             if (!pre_publish_hooks_.empty()) {
                 for (PrePublishHookInterface* hook : pre_publish_hooks_) {
-                    // Assuming hooks are non-null due to registration checks
                     try {
                         hook->on_pre_publish(
                                 publisher_id,
                                 interned_topic_id_for_hook,
                                 event_variant_for_hook,
                                 publish_time_for_hook,
-                                this // Pass const pointer to the bus
+                                this
                         );
                     } catch (const std::exception& e) {
                         LogMessage(LogLevel::ERROR, get_logger_source(),
@@ -844,24 +917,23 @@ namespace EventBusSystem {
                     }
                 }
             }
-            // --- END MODIFICATION ---
 
-            TopicId published_topic_id = interned_topic_id_for_hook; // Reuse interned ID
+            TopicId published_topic_id = interned_topic_id_for_hook;
             StreamId stream_id = stream_id_str.empty() ? INVALID_ID_UINT64 : string_interner_.intern(stream_id_str);
-            Timestamp original_publish_time = publish_time_for_hook; // Reuse time
-            EventVariant event_variant = event_variant_for_hook; // Reuse variant
+            Timestamp original_publish_time = publish_time_for_hook;
+            EventVariant event_variant = event_variant_for_hook;
 
             std::unordered_set<AgentId> subscribers_to_notify;
             TrieNode *exact_node = find_node(topic_str);
             if (exact_node) {
                 subscribers_to_notify.insert(exact_node->subscribers.begin(), exact_node->subscribers.end());
             }
-            if (topic_str.empty() && exact_node == &topic_trie_root_) { // Special case for root if not handled by find_node
+            if (topic_str.empty() && exact_node == &topic_trie_root_) {
                 subscribers_to_notify.insert(topic_trie_root_.subscribers.begin(), topic_trie_root_.subscribers.end());
             }
 
             for (const auto &[agent_id, wildcard_set] : agent_wildcard_subscriptions_) {
-                if (subscribers_to_notify.count(agent_id)) continue; // Already added by exact match
+                if (subscribers_to_notify.count(agent_id)) continue;
                 for (const std::string &pattern : wildcard_set) {
                     if (topic_matches_wildcard(pattern, topic_str)) {
                         subscribers_to_notify.insert(agent_id);
@@ -901,13 +973,13 @@ namespace EventBusSystem {
                     raw_latency_us = dist(random_engine_);
                 }
                 if (params->max_cap_us > 0) raw_latency_us = std::min(raw_latency_us, params->max_cap_us);
-                raw_latency_us = std::max(1.0, raw_latency_us); // Min 1us
+                raw_latency_us = std::max(1.0, raw_latency_us);
 
                 Duration latency = std::chrono::duration_cast<Duration>(LatencyUnit(static_cast<long long>(raw_latency_us)));
                 if (latency < Duration::zero()) latency = LatencyUnit(1);
 
                 Timestamp final_scheduled_time = base_time_for_subscriber + latency;
-                final_scheduled_time = std::max(final_scheduled_time, current_time_ + LatencyUnit(1)); // Must be at least 1us in future from current bus time
+                final_scheduled_time = std::max(final_scheduled_time, current_time_ + LatencyUnit(1));
 
                 SequenceNumber next_seq_num = ++global_schedule_sequence_counter_;
                 ScheduledEvent scheduled_event{final_scheduled_time, event_variant, published_topic_id, publisher_id, sub_id, original_publish_time, stream_id, next_seq_num};
