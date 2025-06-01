@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exchange Simulation - WebAssembly Demo</title>
+    <title>EXCHANGE.SIMULATION.SYSTEM</title>
     <style>
+        /* Ryoji Ikeda inspired aesthetic - clinical, precise, data-driven */
         * {
             margin: 0;
             padding: 0;
@@ -12,859 +13,1209 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
-
-        .main-grid {
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 20px;
-            height: calc(100vh - 180px);
-        }
-
-        .controls-panel {
-            background: white;
-            border-radius: 15px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            overflow-y: auto;
-            max-height: calc(100vh - 200px);
-        }
-
-        .controls-section {
-            margin-bottom: 25px;
-        }
-
-        .controls-section.collapsible h3 {
-            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            background: #000000;
+            color: #ffffff;
+            line-height: 1.2;
+            overflow: hidden;
             user-select: none;
-            padding: 10px 15px;
-            margin: -10px -15px 15px -15px;
-            border-radius: 8px;
-            transition: background-color 0.2s;
+        }
+
+        /* Grid-based layout system */
+        .system-container {
+            width: 100vw;
+            height: 100vh;
+            display: grid;
+            grid-template-rows: 60px 1fr 40px;
+            grid-template-areas: 
+                "header"
+                "main"
+                "status";
+        }
+
+        /* Header - clean, technical */
+        .system-header {
+            grid-area: header;
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+
+        .system-title {
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .system-controls {
+            display: flex;
+            gap: 1px;
+        }
+
+        /* Ikeda-style buttons */
+        .btn {
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #ffffff;
+            padding: 8px 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all 0.1s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            min-width: 80px;
+        }
+
+        .btn:hover {
+            background: #ffffff;
+            color: #000000;
+        }
+
+        .btn:active, .btn.active {
+            background: #ffffff;
+            color: #000000;
+        }
+
+        .btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .btn:disabled:hover {
+            background: #000000;
+            color: #ffffff;
+        }
+
+        /* Main content area - three column grid */
+        .main-content {
+            grid-area: main;
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            border: 1px solid #333333;
+            border-top: none;
+            border-bottom: none;
+        }
+
+        /* Left panel - controls */
+        .controls-panel {
+            background: #000000;
+            border-right: 1px solid #333333;
+            overflow-y: auto;
+            font-size: 10px;
+        }
+
+        .control-section {
+            border-bottom: 1px solid #1a1a1a;
+            padding: 15px;
+        }
+
+        .control-section h3 {
+            font-size: 11px;
+            margin-bottom: 10px;
+            color: #ffffff;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .controls-section.collapsible h3:hover {
-            background: #f7fafc;
-        }
-
-        .controls-section.collapsible.collapsed .section-content {
+        .control-section.collapsed .section-content {
             display: none;
         }
 
-        .controls-section.collapsible.collapsed .toggle-icon {
+        .control-section.collapsed .toggle-icon {
             transform: rotate(-90deg);
         }
 
         .toggle-icon {
-            transition: transform 0.2s;
-            font-size: 0.8rem;
-        }
-
-        .section-content {
-            display: block;
-        }
-
-        .controls-section h3 {
-            color: #4a5568;
-            margin-bottom: 15px;
-            font-size: 1.1rem;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 5px;
+            transition: transform 0.1s;
+            font-size: 8px;
         }
 
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
 
         .form-group label {
             display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #2d3748;
+            margin-bottom: 3px;
+            font-size: 9px;
+            color: #cccccc;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .form-group input, .form-group select {
             width: 100%;
-            padding: 8px 12px;
-            border: 2px solid #e2e8f0;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.2s;
+            padding: 6px 8px;
+            background: #000000;
+            border: 1px solid #666666;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
         }
 
         .form-group input:focus, .form-group select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #ffffff;
         }
 
         .form-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: 8px;
         }
 
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-secondary {
-            background: #718096;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #4a5568;
-        }
-
-        .btn-danger {
-            background: #e53e3e;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c53030;
-        }
-
-        .btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .button-group .btn {
-            flex: 1;
-        }
-
-        .display-panel {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        /* Center panel - heatmap visualization */
+        .heatmap-panel {
+            background: #000000;
+            border-right: 1px solid #333333;
+            position: relative;
             overflow: hidden;
+        }
+
+        .heatmap-header {
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 40px;
+        }
+
+        .heatmap-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .heatmap-info {
+            font-size: 9px;
+            color: #888888;
+        }
+
+        .heatmap-canvas-container {
+            position: absolute;
+            top: 40px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+        }
+
+        #heatmapCanvas {
+            display: block;
+            background: #000000;
+        }
+
+        /* Right panel - orderbook tables */
+        .orderbook-panel {
+            background: #000000;
             display: flex;
             flex-direction: column;
         }
 
-        .display-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
+        .orderbook-header {
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            padding: 10px 15px;
+            height: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .display-header h2 {
-            margin-bottom: 10px;
+        .orderbook-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }
 
-        .status-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        .orderbook-stats {
+            display: flex;
             gap: 15px;
-            margin-top: 10px;
+            font-size: 9px;
+            color: #888888;
+        }
+
+        .orderbook-content {
+            flex: 1;
+            display: grid;
+            grid-template-rows: 1fr 1fr;
+            overflow: hidden;
+        }
+
+        .orderbook-side {
+            padding: 10px;
+            overflow-y: auto;
+            border-bottom: 1px solid #333333;
+        }
+
+        .orderbook-side:last-child {
+            border-bottom: none;
+        }
+
+        .orderbook-side h4 {
+            font-size: 10px;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #ffffff;
+        }
+
+        .orderbook-level {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            padding: 2px 0;
+            font-size: 9px;
+            font-family: 'Courier New', monospace;
+            border-bottom: 1px solid #111111;
+        }
+
+        .orderbook-asks .orderbook-level {
+            background: linear-gradient(90deg, transparent 0%, rgba(255,0,0,0.1) 100%);
+        }
+
+        .orderbook-bids .orderbook-level {
+            background: linear-gradient(90deg, transparent 0%, rgba(0,255,0,0.1) 100%);
+        }
+
+        .price {
+            text-align: right;
+            color: #ffffff;
+        }
+
+        .quantity {
+            text-align: left;
+            color: #888888;
+            padding-left: 10px;
+        }
+
+        /* Status bar */
+        .system-status {
+            grid-area: status;
+            background: #000000;
+            border-top: 1px solid #333333;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            align-items: center;
+            padding: 0 20px;
+            font-size: 9px;
         }
 
         .status-item {
             text-align: center;
         }
 
-        .status-item .label {
-            font-size: 0.9rem;
-            opacity: 0.8;
+        .status-label {
+            color: #888888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .status-item .value {
-            font-size: 1.2rem;
+        .status-value {
+            color: #ffffff;
             font-weight: bold;
         }
 
-        .orderbook-container {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .orderbook {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            height: 100%;
-        }
-
-        .orderbook-side {
-            border-radius: 10px;
-            padding: 15px;
-        }
-
-        .orderbook-asks {
-            background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
-        }
-
-        .orderbook-bids {
-            background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
-        }
-
-        .orderbook-side h3 {
-            text-align: center;
-            margin-bottom: 15px;
-            font-size: 1.2rem;
-            color: #2d3748;
-        }
-
-        .orderbook-level {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            padding: 8px 12px;
-            margin-bottom: 5px;
-            background: rgba(255,255,255,0.7);
-            border-radius: 6px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9rem;
-        }
-
-        .price {
-            text-align: right;
-            font-weight: bold;
-        }
-
-        .quantity {
-            text-align: left;
-            color: #4a5568;
-        }
-
-        .status-bar {
-            background: #f7fafc;
-            padding: 15px 20px;
-            border-top: 1px solid #e2e8f0;
-        }
-
-        .status-message {
-            font-size: 14px;
-            color: #4a5568;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #718096;
-        }
-
-        .error {
-            background: #fed7d7;
-            color: #c53030;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        .hidden {
-            display: none;
-        }
-
-        /* Responsive design */
-        @media (max-width: 1024px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-                grid-template-rows: auto 1fr;
-            }
-            
-            .controls-panel {
-                max-height: 300px;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .orderbook {
-                grid-template-columns: 1fr;
-            }
-            
-            .form-row {
-                grid-template-columns: 1fr;
-            }
-            
-            .button-group {
-                flex-direction: column;
-            }
-            
-            .status-info {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        .btn.small {
-            padding: 6px 12px;
-            font-size: 12px;
-            margin-bottom: 10px;
-        }
-
+        /* Spread profiles */
         .spread-profile {
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            position: relative;
+            background: #111111;
+            border: 1px solid #333333;
+            margin-bottom: 8px;
+            padding: 10px;
         }
 
         .spread-profile-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
-        .spread-profile-title {
-            font-weight: 600;
-            color: #2d3748;
+        .profile-title {
+            font-size: 9px;
+            color: #ffffff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .profile-remove-btn {
-            background: #e53e3e;
-            color: white;
+        .profile-remove {
+            background: #ff0000;
+            color: #ffffff;
             border: none;
-            border-radius: 4px;
-            padding: 4px 8px;
+            width: 16px;
+            height: 16px;
+            font-size: 8px;
             cursor: pointer;
-            font-size: 12px;
-        }
-
-        .profile-remove-btn:hover {
-            background: #c53030;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .profile-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: 5px;
         }
 
-        .profile-form-group {
-            margin-bottom: 10px;
-        }
-
-        .profile-form-group label {
-            display: block;
-            margin-bottom: 3px;
-            font-size: 12px;
-            font-weight: 500;
-            color: #4a5568;
-        }
-
-        .profile-form-group input {
+        .profile-input {
             width: 100%;
-            padding: 6px 8px;
-            border: 1px solid #cbd5e0;
-            border-radius: 4px;
+            padding: 3px 5px;
+            background: #000000;
+            border: 1px solid #444444;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 8px;
+        }
+
+        /* Loading and error states */
+        .loading, .error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
             font-size: 12px;
         }
 
-        .profile-preview {
-            background: #edf2f7;
-            padding: 8px;
-            border-radius: 4px;
-            margin-top: 8px;
-            font-size: 11px;
-            color: #4a5568;
+        .loading.hidden, .error.hidden {
+            display: none;
+        }
+
+        .error {
+            color: #ff4444;
+            background: #000000;
+            border: 1px solid #ff4444;
+            padding: 20px;
+            max-width: 400px;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1400px) {
+            .main-content {
+                grid-template-columns: 280px 1fr 320px;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                grid-template-rows: 300px 1fr;
+            }
+            
+            .controls-panel {
+                border-right: none;
+                border-bottom: 1px solid #333333;
+            }
+            
+            .heatmap-panel {
+                border-right: none;
+            }
+        }
+
+        /* Data visualization specific styles */
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 1px;
+            background: #333333;
+        }
+
+        .data-cell {
+            background: #000000;
+            padding: 4px;
+            text-align: center;
+            font-size: 8px;
+            border: 1px solid #333333;
+        }
+
+        /* Precision indicators */
+        .precision-indicator {
+            width: 2px;
+            height: 2px;
+            background: #ffffff;
+            display: inline-block;
+            margin: 0 1px;
+        }
+
+        /* Technical readouts */
+        .readout {
+            font-family: 'Courier New', monospace;
+            font-size: 8px;
+            color: #00ff00;
+            background: #000000;
+            padding: 2px 4px;
+            border: 1px solid #004400;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🏦 Exchange Simulation</h1>
-            <p>Real-time order book simulation powered by WebAssembly</p>
+    <div class="system-container">
+        <!-- System Header -->
+        <div class="system-header">
+            <div class="system-title">EXCHANGE.SIMULATION.SYSTEM</div>
+            <div class="system-controls">
+                <button id="initBtn" class="btn">INIT</button>
+                <button id="startBtn" class="btn" disabled>START</button>
+                <button id="stopBtn" class="btn" disabled>STOP</button>
+                <button id="resetBtn" class="btn">RESET</button>
+            </div>
         </div>
 
-        <div id="loading" class="loading">
-            <h3>Loading WebAssembly module...</h3>
-            <p>Please wait while the simulation engine initializes.</p>
-        </div>
-
-        <div id="error" class="error hidden"></div>
-
-        <div id="mainContent" class="main-grid hidden">
+        <!-- Main Content Grid -->
+        <div class="main-content">
+            <!-- Left Panel: Controls -->
             <div class="controls-panel">
-                <div class="controls-section">
-                    <h3>📊 Basic Parameters</h3>
-                    <div class="form-group">
-                        <label for="agents">Number of Agents</label>
-                        <input type="number" id="agents" min="1" max="1000" value="10">
-                    </div>
-                    <div class="form-group">
-                        <label for="symbol">Trading Symbol</label>
-                        <input type="text" id="symbol" value="BTC/USD">
-                    </div>
-                    <div class="form-row">
+                <!-- Basic Parameters -->
+                <div class="control-section">
+                    <h3 onclick="toggleSection(this)">BASIC.PARAMS <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
                         <div class="form-group">
-                            <label for="seed">Random Seed</label>
-                            <input type="number" id="seed" value="47">
+                            <label>AGENTS</label>
+                            <input type="number" id="agents" min="1" max="1000" value="10">
                         </div>
                         <div class="form-group">
-                            <label for="speedFactor">Speed Factor</label>
-                            <input type="number" id="speedFactor" min="1" max="1000" value="100" step="10">
+                            <label>SYMBOL</label>
+                            <input type="text" id="symbol" value="BTC/USD">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>SEED</label>
+                                <input type="number" id="seed" value="47">
+                            </div>
+                            <div class="form-group">
+                                <label>SPEED</label>
+                                <input type="number" id="speedFactor" min="1" max="1000" value="100">
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="controls-section collapsible">
-                    <h3 onclick="toggleSection(this)">📈 Spread Profiles <span class="toggle-icon">▼</span></h3>
+                <!-- Spread Profiles -->
+                <div class="control-section">
+                    <h3 onclick="toggleSection(this)">SPREAD.PROFILES <span class="toggle-icon">▼</span></h3>
                     <div class="section-content">
-                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
-                            Spread profiles control how agents choose their bid-ask spreads using Beta distributions. 
-                            <strong>Global Low/High:</strong> min/max spread in basis points. 
-                            <strong>Alpha/Beta Location:</strong> shape parameters for spread center. 
-                            <strong>Alpha/Beta Width:</strong> shape parameters for spread range.
-                        </p>
-                        <div style="margin-bottom: 10px;">
-                            <button type="button" onclick="addPresetProfile('tight')" class="btn btn-secondary small">+ Tight Spreads</button>
-                            <button type="button" onclick="addPresetProfile('wide')" class="btn btn-secondary small">+ Wide Spreads</button>
-                            <button type="button" onclick="addPresetProfile('mixed')" class="btn btn-secondary small">+ Mixed Profile</button>
+                        <div style="margin-bottom: 10px; display: flex; gap: 2px;">
+                            <button onclick="addPresetProfile('tight')" class="btn" style="font-size: 8px; padding: 4px 8px;">TIGHT</button>
+                            <button onclick="addPresetProfile('wide')" class="btn" style="font-size: 8px; padding: 4px 8px;">WIDE</button>
+                            <button onclick="addPresetProfile('mixed')" class="btn" style="font-size: 8px; padding: 4px 8px;">MIXED</button>
                         </div>
-                        <div id="spreadProfiles">
-                            <!-- Dynamic spread profiles will be inserted here -->
-                        </div>
-                        <button type="button" id="addSpreadProfile" class="btn btn-secondary small">+ Custom Profile</button>
+                        <div id="spreadProfiles"></div>
+                        <button id="addSpreadProfile" class="btn" style="font-size: 8px; padding: 4px 8px; width: 100%;">+ ADD</button>
                     </div>
                 </div>
 
-                <div class="controls-section collapsible">
-                    <h3 onclick="toggleSection(this)">🔥 Heatmap Visualization <span class="toggle-icon">▼</span></h3>
+                <!-- Order Timeouts -->
+                <div class="control-section collapsed">
+                    <h3 onclick="toggleSection(this)">ORDER.TIMEOUTS <span class="toggle-icon">▼</span></h3>
                     <div class="section-content">
-                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
-                            Real-time orderbook depth heatmap visualization with professional trading interface aesthetics.
-                            Configure buffer size, price resolution, and update frequency for optimal performance.
-                        </p>
-                        
-                        <!-- Heatmap Controls -->
-                        <div style="margin-bottom: 15px;">
-                            <button type="button" onclick="openHeatmapWindow()" class="btn btn-primary small">🔥 Open Heatmap</button>
-                            <button type="button" onclick="toggleHeatmapConfig()" class="btn btn-secondary small" id="heatmapConfigBtn">⚙️ Config</button>
-                        </div>
-                        
-                        <!-- Heatmap Configuration -->
-                        <div id="heatmapConfig" class="hidden" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
-                            <div style="margin-bottom: 10px;">
-                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Buffer Size (snapshots)</label>
-                                <input type="number" id="heatmapBufferSize" min="50" max="1000" value="300" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;">
-                                <small style="color: #718096; font-size: 10px;">Number of historical snapshots to store (50-1000)</small>
-                            </div>
-                            
-                            <div style="margin-bottom: 10px;">
-                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Price Levels</label>
-                                <input type="number" id="heatmapPriceLevels" min="50" max="500" value="200" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;" disabled>
-                                <small style="color: #718096; font-size: 10px;">Fixed at construction time (default: 200 levels)</small>
-                            </div>
-                            
-                            <div style="margin-bottom: 10px;">
-                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Tick Size ($)</label>
-                                <input type="number" id="heatmapTickSize" min="0.1" max="10" step="0.1" value="1.0" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;" disabled>
-                                <small style="color: #718096; font-size: 10px;">Fixed at construction time (default: $1.0)</small>
-                            </div>
-                            
-                            <div style="margin-bottom: 10px;">
-                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Update Frequency</label>
-                                <input type="number" id="heatmapUpdateFreq" min="1" max="50" value="5" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;">
-                                <small style="color: #718096; font-size: 10px;">Send heatmap data every N L2 updates (1-50)</small>
-                            </div>
-                            
-                            <div>
-                                <label style="display: flex; align-items: center; font-size: 12px; font-weight: 500; color: #4a5568;">
-                                    <input type="checkbox" id="heatmapEnabled" checked style="margin-right: 8px;">
-                                    Enable Heatmap Updates
-                                </label>
-                                <small style="color: #718096; font-size: 10px;">Toggle real-time heatmap data transmission</small>
-                            </div>
-                            
-                            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 8px; margin-top: 10px; font-size: 10px; color: #8b7d00;">
-                                <strong>Note:</strong> Price levels and tick size are configured during WebAssembly initialization and cannot be changed dynamically.
-                            </div>
-                        </div>
-                        
-                        <!-- Heatmap Status -->
-                        <div style="background: #edf2f7; padding: 8px; border-radius: 4px; font-size: 11px; color: #4a5568;">
-                            <div>Status: <span id="heatmapStatus">Ready</span></div>
-                            <div>Window: <span id="heatmapWindowStatus">Closed</span></div>
-                            <div>Updates: <span id="heatmapUpdateCount">0</span></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="controls-section collapsible">
-                    <h3 onclick="toggleSection(this)">⏱️ Order Timeouts <span class="toggle-icon">▼</span></h3>
-                    <div class="section-content">
-                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
-                            Configure how long orders stay in the market before expiring. 
-                            <strong>Log-normal:</strong> symmetric distribution. <strong>Pareto:</strong> power-law with long tails. 
-                            <strong>Mixed:</strong> combination of both distributions.
-                        </p>
                         <div class="form-group">
-                            <label for="timeoutDist">Distribution</label>
+                            <label>DISTRIBUTION</label>
                             <select id="timeoutDist">
-                                <option value="lognormal">Log-normal</option>
-                                <option value="pareto">Pareto</option>
-                                <option value="lognormal_pareto_mix">Mixed</option>
+                                <option value="lognormal">LOG-NORMAL</option>
+                                <option value="pareto">PARETO</option>
+                                <option value="lognormal_pareto_mix">MIXED</option>
                             </select>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="medianTimeout">Median (s)</label>
+                                <label>MEDIAN (S)</label>
                                 <input type="number" id="medianTimeout" min="0.1" max="60" value="5" step="0.1">
                             </div>
                             <div class="form-group">
-                                <label for="sigmaTimeout">Sigma</label>
+                                <label>SIGMA</label>
                                 <input type="number" id="sigmaTimeout" min="0.1" max="5" value="0.8" step="0.1">
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="paretoAlpha">Pareto Alpha</label>
+                                <label>P.ALPHA</label>
                                 <input type="number" id="paretoAlpha" min="0.1" max="5" value="1.5" step="0.1">
                             </div>
                             <div class="form-group">
-                                <label for="paretoScale">Pareto Scale</label>
+                                <label>P.SCALE</label>
                                 <input type="number" id="paretoScale" min="1" max="100" value="5" step="1">
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="tailMix">Tail Mix</label>
+                                <label>TAIL.MIX</label>
                                 <input type="number" id="tailMix" min="0" max="1" value="0.1" step="0.05">
                             </div>
                             <div class="form-group">
-                                <label for="minTimeoutS">Min Timeout (s)</label>
+                                <label>MIN.T (S)</label>
                                 <input type="number" id="minTimeoutS" min="0.1" max="60" value="1" step="0.1">
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="maxTimeoutS">Max Timeout (s)</label>
+                            <label>MAX.T (S)</label>
                             <input type="number" id="maxTimeoutS" min="1" max="3600" value="60" step="1">
                         </div>
                     </div>
                 </div>
 
-                <div class="controls-section collapsible">
-                    <h3 onclick="toggleSection(this)">💰 Order Sizes <span class="toggle-icon">▼</span></h3>
+                <!-- Order Sizes -->
+                <div class="control-section collapsed">
+                    <h3 onclick="toggleSection(this)">ORDER.SIZES <span class="toggle-icon">▼</span></h3>
                     <div class="section-content">
-                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
-                            Define the range of order sizes that agents can place. Each agent will randomly choose 
-                            min and max order sizes within these ranges.
-                        </p>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="minSizeMin">Min Size Range</label>
+                                <label>MIN.RANGE</label>
                                 <input type="number" id="minSizeMin" min="0.001" max="1" value="0.01" step="0.001">
                             </div>
                             <div class="form-group">
-                                <label for="minSizeMax"></label>
+                                <label></label>
                                 <input type="number" id="minSizeMax" min="0.001" max="1" value="0.1" step="0.001">
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="maxSizeMin">Max Size Range</label>
+                                <label>MAX.RANGE</label>
                                 <input type="number" id="maxSizeMin" min="0.001" max="10" value="0.1" step="0.001">
                             </div>
                             <div class="form-group">
-                                <label for="maxSizeMax"></label>
+                                <label></label>
                                 <input type="number" id="maxSizeMax" min="0.001" max="10" value="0.5" step="0.001">
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="controls-section collapsible">
-                    <h3 onclick="toggleSection(this)">⚖️ Imbalance Parameters <span class="toggle-icon">▼</span></h3>
+                <!-- Imbalance Parameters -->
+                <div class="control-section collapsed">
+                    <h3 onclick="toggleSection(this)">IMBALANCE.PARAMS <span class="toggle-icon">▼</span></h3>
                     <div class="section-content">
-                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
-                            Agents adjust their quotes based on order book imbalance. 
-                            <strong>Levels:</strong> how many book levels to consider. 
-                            <strong>Max Adj BPS:</strong> maximum spread adjustment in basis points.
-                        </p>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="imbalanceLevelsMin">Levels Range</label>
+                                <label>LEVELS</label>
                                 <input type="number" id="imbalanceLevelsMin" min="1" max="10" value="1" step="1">
                             </div>
                             <div class="form-group">
-                                <label for="imbalanceLevelsMax"></label>
+                                <label></label>
                                 <input type="number" id="imbalanceLevelsMax" min="1" max="10" value="3" step="1">
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="maxImbalanceAdjMin">Max Adj BPS Range</label>
+                                <label>ADJ.BPS</label>
                                 <input type="number" id="maxImbalanceAdjMin" min="0" max="100" value="2" step="1">
                             </div>
                             <div class="form-group">
-                                <label for="maxImbalanceAdjMax"></label>
+                                <label></label>
                                 <input type="number" id="maxImbalanceAdjMax" min="0" max="100" value="10" step="1">
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="controls-section collapsible">
-                    <h3 onclick="toggleSection(this)">🔧 Advanced Settings <span class="toggle-icon">▼</span></h3>
+                <!-- Advanced Settings -->
+                <div class="control-section collapsed">
+                    <h3 onclick="toggleSection(this)">ADVANCED <span class="toggle-icon">▼</span></h3>
                     <div class="section-content">
-                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
-                            Fine-tune simulation behavior. 
-                            <strong>Warmup Range:</strong> time to let each agent settle before adding the next one. 
-                            <strong>Seed Levels:</strong> initial order book depth when simulation starts.
-                        </p>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="warmupMin">Warmup Range (ms)</label>
+                                <label>WARMUP (MS)</label>
                                 <input type="number" id="warmupMin" min="0" max="5000" value="0" step="10">
                             </div>
                             <div class="form-group">
-                                <label for="warmupMax"></label>
+                                <label></label>
                                 <input type="number" id="warmupMax" min="0" max="5000" value="0" step="10">
                             </div>
                         </div>
                         <div class="form-group">
-                            <label for="seedLevels">Order Book Seed Levels</label>
+                            <label>SEED.LEVELS</label>
                             <input type="number" id="seedLevels" min="1" max="20" value="5" step="1">
                         </div>
                     </div>
                 </div>
 
-                <div class="button-group">
-                    <button id="initBtn" class="btn btn-primary">Initialize</button>
-                    <button id="startBtn" class="btn btn-secondary" disabled>Start</button>
-                    <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
-                </div>
-                <div class="button-group" style="margin-top: 10px;">
-                    <button id="resetBtn" class="btn btn-secondary" onclick="resetToDefaults()">🔄 Reset to Defaults</button>
+                <!-- Heatmap Config -->
+                <div class="control-section collapsed">
+                    <h3 onclick="toggleSection(this)">HEATMAP.CONFIG <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <div class="form-group">
+                            <label>BUFFER.SIZE</label>
+                            <input type="number" id="heatmapBufferSize" min="50" max="1000" value="300">
+                        </div>
+                        <div class="form-group">
+                            <label>UPDATE.FREQ</label>
+                            <input type="number" id="heatmapUpdateFreq" min="1" max="50" value="5">
+                        </div>
+                        <div class="form-group">
+                            <label>INTENSITY</label>
+                            <input type="range" id="heatmapIntensity" min="1" max="10" value="3">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center;">
+                                <input type="checkbox" id="heatmapEnabled" checked style="margin-right: 8px;">
+                                ENABLED
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div class="display-panel">
-                <div class="display-header">
-                    <h2>📈 Live Order Book</h2>
-                    <div class="status-info">
-                        <div class="status-item">
-                            <div class="label">Status</div>
-                            <div id="simStatus" class="value">Idle</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="label">Queue Size</div>
-                            <div id="queueSize" class="value">0</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="label">L2 Updates</div>
-                            <div id="updateCount" class="value">0</div>
-                        </div>
-                        <div class="status-item">
-                            <div class="label">Symbol</div>
-                            <div id="currentSymbol" class="value">-</div>
-                        </div>
+            <!-- Center Panel: Heatmap -->
+            <div class="heatmap-panel">
+                <div class="heatmap-header">
+                    <div class="heatmap-title">DEPTH.HEATMAP</div>
+                    <div class="heatmap-info">
+                        <span>BUFFER: <span id="heatmapBufferUsage">0</span>/<span id="heatmapBufferMax">300</span></span>
+                        <span style="margin-left: 10px;">UPDATES: <span id="heatmapUpdateCount">0</span></span>
                     </div>
                 </div>
-
-                <div class="orderbook-container">
-                    <div id="noData" class="loading">
-                        <h3>No order book data</h3>
-                        <p>Initialize and start the simulation to see live data.</p>
+                <div class="heatmap-canvas-container">
+                    <canvas id="heatmapCanvas"></canvas>
+                    <div id="heatmapLoading" class="loading">
+                        <div>INITIALIZING HEATMAP</div>
+                        <div style="font-size: 10px; margin-top: 10px; color: #888;">WAITING FOR DATA</div>
                     </div>
-
-                    <div id="orderbook" class="orderbook hidden">
-                        <div class="orderbook-side orderbook-asks">
-                            <h3>🔴 ASKS (Sell Orders)</h3>
-                            <div id="askLevels"></div>
-                        </div>
-                        <div class="orderbook-side orderbook-bids">
-                            <h3>🟢 BIDS (Buy Orders)</h3>
-                            <div id="bidLevels"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="status-bar">
-                    <div id="statusMessage" class="status-message">Ready to initialize simulation.</div>
                 </div>
             </div>
+
+            <!-- Right Panel: Orderbook -->
+            <div class="orderbook-panel">
+                <div class="orderbook-header">
+                    <div class="orderbook-title">L2.ORDERBOOK</div>
+                    <div class="orderbook-stats">
+                        <span>SYMBOL: <span id="currentSymbol">-</span></span>
+                        <span>UPDATES: <span id="l2UpdateCount">0</span></span>
+                    </div>
+                </div>
+                <div class="orderbook-content">
+                    <div class="orderbook-side orderbook-asks">
+                        <h4>ASKS</h4>
+                        <div id="askLevels"></div>
+                    </div>
+                    <div class="orderbook-side orderbook-bids">
+                        <h4>BIDS</h4>
+                        <div id="bidLevels"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Status Bar -->
+        <div class="system-status">
+            <div class="status-item">
+                <div class="status-label">STATUS</div>
+                <div class="status-value" id="simStatus">IDLE</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">QUEUE</div>
+                <div class="status-value" id="queueSize">0</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">L2.COUNT</div>
+                <div class="status-value" id="updateCount">0</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">MID.PRICE</div>
+                <div class="status-value" id="midPrice">0.00</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">SPREAD</div>
+                <div class="status-value" id="spread">0.00</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">AGENTS</div>
+                <div class="status-value" id="activeAgents">0</div>
+            </div>
+        </div>
+
+        <!-- Error Display -->
+        <div id="error" class="error hidden">
+            <div>SYSTEM ERROR</div>
+            <div id="errorMessage" style="font-size: 10px; margin-top: 10px;"></div>
         </div>
     </div>
 
     <script>
-        // Global variables
+        // Integrated Orderbook Heatmap Visualization
+        class OrderbookHeatmap {
+            constructor() {
+                this.canvas = document.getElementById('heatmapCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                // State
+                this.isPlaying = true;
+                this.updateCount = 0;
+                this.lastMidPrice = 50000;
+                this.lastSpread = 5;
+                this.heatmapData = null;
+                
+                // Configuration
+                this.config = {
+                    bufferSize: 300,
+                    priceLevels: 200,
+                    tickSize: 1.0,
+                    updateFreq: 5,
+                    intensity: 3
+                };
+                
+                // Visual parameters
+                this.cellWidth = 3;
+                this.cellHeight = 2;
+                this.leftMargin = 60;
+                this.topMargin = 30;
+                
+                // Data buffer
+                this.dataBuffer = [];
+                this.maxBufferSize = 300;
+                
+                this.setupCanvas();
+                this.setupEventListeners();
+            }
+            
+            setupCanvas() {
+                this.handleResize();
+                this.clearCanvas();
+                // Start with synthetic data for demo purposes
+                this.startSyntheticData();
+            }
+            
+            setupEventListeners() {
+                window.addEventListener('resize', () => this.handleResize());
+                
+                // Listen for heatmap config changes
+                const intensitySlider = document.getElementById('heatmapIntensity');
+                if (intensitySlider) {
+                    intensitySlider.addEventListener('input', (e) => {
+                        this.config.intensity = parseInt(e.target.value);
+                    });
+                }
+                
+                const bufferSizeInput = document.getElementById('heatmapBufferSize');
+                if (bufferSizeInput) {
+                    bufferSizeInput.addEventListener('change', (e) => {
+                        this.config.bufferSize = parseInt(e.target.value);
+                        this.maxBufferSize = this.config.bufferSize;
+                        document.getElementById('heatmapBufferMax').textContent = this.config.bufferSize;
+                    });
+                }
+                
+                const updateFreqInput = document.getElementById('heatmapUpdateFreq');
+                if (updateFreqInput) {
+                    updateFreqInput.addEventListener('change', (e) => {
+                        this.config.updateFreq = parseInt(e.target.value);
+                    });
+                }
+            }
+            
+            handleResize() {
+                const container = this.canvas.parentElement;
+                const rect = container.getBoundingClientRect();
+                
+                this.canvas.width = Math.max(400, rect.width - 20);
+                this.canvas.height = Math.max(300, rect.height - 20);
+                
+                // Recalculate cell dimensions
+                const availableWidth = this.canvas.width - this.leftMargin - 20;
+                const availableHeight = this.canvas.height - this.topMargin - 20;
+                
+                this.cellWidth = Math.max(2, Math.floor(availableWidth / this.config.bufferSize));
+                this.cellHeight = Math.max(1, Math.floor(availableHeight / this.config.priceLevels));
+                
+                this.redraw();
+            }
+            
+            clearCanvas() {
+                this.ctx.fillStyle = '#000000';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            onL2Update(event) {
+                if (!this.isPlaying) return;
+                
+                // Calculate mid price and spread
+                if (event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0) {
+                    this.lastMidPrice = (event.bids[0].price + event.asks[0].price) / 2;
+                    this.lastSpread = event.asks[0].price - event.bids[0].price;
+                }
+                
+                // Hide loading overlay
+                const loading = document.getElementById('heatmapLoading');
+                if (loading && !loading.classList.contains('hidden')) {
+                    loading.classList.add('hidden');
+                }
+            }
+            
+            onHeatmapUpdate(heatmapData) {
+                if (!this.isPlaying) return;
+                
+                this.updateCount++;
+                document.getElementById('heatmapUpdateCount').textContent = this.updateCount;
+                
+                // Add new data to buffer
+                this.addToDataBuffer(heatmapData);
+                
+                // Update buffer info
+                document.getElementById('heatmapBufferUsage').textContent = this.dataBuffer.length;
+                
+                this.renderTimeSeriesHeatmap();
+            }
+            
+            addToDataBuffer(heatmapData) {
+                this.dataBuffer.push({
+                    bidVolumes: [...heatmapData.bidVolumes],
+                    askVolumes: [...heatmapData.askVolumes],
+                    midPrice: heatmapData.midPrice,
+                    timestamp: heatmapData.timestamp || Date.now(),
+                    stats: heatmapData.stats
+                });
+                
+                if (this.dataBuffer.length > this.maxBufferSize) {
+                    this.dataBuffer.shift();
+                }
+                
+                this.heatmapData = heatmapData;
+            }
+            
+            renderTimeSeriesHeatmap() {
+                this.clearCanvas();
+                
+                if (this.dataBuffer.length === 0) return;
+                
+                const availableWidth = this.canvas.width - this.leftMargin - 20;
+                const maxCols = Math.floor(availableWidth / this.cellWidth);
+                
+                const numTimePoints = Math.min(this.dataBuffer.length, maxCols);
+                const startIndex = Math.max(0, this.dataBuffer.length - numTimePoints);
+                
+                const { maxVolume } = this.calculateGlobalVolumeStats(startIndex, numTimePoints);
+                
+                if (maxVolume === 0) return;
+                
+                // Render each time point as a column
+                for (let timeIndex = 0; timeIndex < numTimePoints; timeIndex++) {
+                    const dataIndex = startIndex + timeIndex;
+                    const data = this.dataBuffer[dataIndex];
+                    
+                    const x = this.leftMargin + timeIndex * this.cellWidth;
+                    this.renderColumn(x, data, maxVolume);
+                }
+                
+                // Draw overlays
+                if (this.heatmapData) {
+                    this.drawPriceLabels(this.heatmapData);
+                    this.drawMidPriceLine(this.heatmapData);
+                    this.drawTimeAxis(numTimePoints);
+                }
+            }
+            
+            renderColumn(x, data, maxVolume) {
+                const { bidVolumes, askVolumes } = data;
+                const numLevels = Math.min(bidVolumes.length, askVolumes.length);
+                
+                for (let level = 0; level < numLevels; level++) {
+                    const y = this.topMargin + level * this.cellHeight;
+                    
+                    // Render bid volume (left half)
+                    if (level < bidVolumes.length && bidVolumes[level] > 0) {
+                        const intensity = bidVolumes[level] / maxVolume;
+                        const color = this.getIntensityColor(intensity, 'bid');
+                        this.ctx.fillStyle = color;
+                        this.ctx.fillRect(x, y, this.cellWidth / 2, this.cellHeight);
+                    }
+                    
+                    // Render ask volume (right half)
+                    if (level < askVolumes.length && askVolumes[level] > 0) {
+                        const intensity = askVolumes[level] / maxVolume;
+                        const color = this.getIntensityColor(intensity, 'ask');
+                        this.ctx.fillStyle = color;
+                        this.ctx.fillRect(x + this.cellWidth / 2, y, this.cellWidth / 2, this.cellHeight);
+                    }
+                }
+            }
+            
+            calculateGlobalVolumeStats(startIndex, numTimePoints) {
+                let allVolumes = [];
+                
+                for (let i = 0; i < numTimePoints; i++) {
+                    const data = this.dataBuffer[startIndex + i];
+                    
+                    data.bidVolumes.forEach(vol => vol > 0 && allVolumes.push(vol));
+                    data.askVolumes.forEach(vol => vol > 0 && allVolumes.push(vol));
+                }
+                
+                allVolumes.sort((a, b) => a - b);
+                const p95Volume = allVolumes.length > 0 ? 
+                    allVolumes[Math.floor(allVolumes.length * 0.95)] : 0;
+                
+                return { maxVolume: p95Volume };
+            }
+            
+            getIntensityColor(intensity, side) {
+                const adjustedIntensity = Math.pow(intensity, 1 / this.config.intensity) * this.config.intensity;
+                
+                if (adjustedIntensity < 0.1) return '#000000';
+                if (adjustedIntensity < 0.3) return '#222222';
+                if (adjustedIntensity < 0.5) return '#444444';
+                if (adjustedIntensity < 0.7) return '#777777';
+                if (adjustedIntensity < 0.9) return '#aaaaaa';
+                return '#ffffff';
+            }
+            
+            drawPriceLabels(data) {
+                if (!data.priceLabels || !data.midPrice) return;
+                
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.font = '8px Courier New';
+                this.ctx.textAlign = 'right';
+                
+                const midLevel = Math.floor(data.numLevels / 2);
+                const labelStep = Math.max(1, Math.floor(data.numLevels / 15));
+                
+                for (let level = 0; level < data.numLevels; level += labelStep) {
+                    if (level < data.priceLabels.length) {
+                        const price = data.priceLabels[level];
+                        const y = this.topMargin + level * this.cellHeight + this.cellHeight / 2;
+                        
+                        this.ctx.fillStyle = Math.abs(level - midLevel) < 3 ? '#00ff00' : '#888888';
+                        this.ctx.fillText(price.toFixed(1), this.leftMargin - 5, y + 2);
+                    }
+                }
+            }
+            
+            drawMidPriceLine(data) {
+                if (!data.midPrice || !data.numLevels) return;
+                
+                const midLevel = Math.floor(data.numLevels / 2);
+                const y = this.topMargin + midLevel * this.cellHeight + this.cellHeight / 2;
+                
+                this.ctx.strokeStyle = '#00ff00';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([2, 2]);
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.leftMargin, y);
+                this.ctx.lineTo(this.canvas.width - 20, y);
+                this.ctx.stroke();
+                
+                this.ctx.setLineDash([]);
+            }
+            
+            drawTimeAxis(numTimePoints) {
+                const step = Math.max(1, Math.floor(numTimePoints / 8));
+                
+                this.ctx.strokeStyle = '#333333';
+                this.ctx.lineWidth = 1;
+                this.ctx.font = '7px Courier New';
+                this.ctx.fillStyle = '#666666';
+                this.ctx.textAlign = 'center';
+                
+                for (let i = 0; i < numTimePoints; i += step) {
+                    const x = this.leftMargin + i * this.cellWidth + this.cellWidth / 2;
+                    const y1 = this.topMargin - 5;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y1);
+                    this.ctx.lineTo(x, y1 + 3);
+                    this.ctx.stroke();
+                    
+                    const timeLabel = `T-${numTimePoints - i - 1}`;
+                    this.ctx.fillText(timeLabel, x, y1 - 2);
+                }
+                
+                // Highlight current time
+                if (numTimePoints > 0) {
+                    const x = this.leftMargin + (numTimePoints - 1) * this.cellWidth + this.cellWidth / 2;
+                    const y1 = this.topMargin - 10;
+                    const y2 = this.topMargin + this.config.priceLevels * this.cellHeight + 10;
+                    
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y1);
+                    this.ctx.lineTo(x, y2);
+                    this.ctx.stroke();
+                    
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.fillText('NOW', x, y1 - 2);
+                }
+            }
+            
+            // Demo data generation
+            startSyntheticData() {
+                let counter = 0;
+                const interval = setInterval(() => {
+                    if (!this.isPlaying) return;
+                    
+                    if (counter % this.config.updateFreq === 0) {
+                        const heatmapData = this.generateSyntheticHeatmapData();
+                        this.onHeatmapUpdate(heatmapData);
+                    }
+                    
+                    counter++;
+                }, 200);
+                
+                this.syntheticInterval = interval;
+            }
+            
+            generateSyntheticHeatmapData() {
+                const numLevels = this.config.priceLevels;
+                const bidVolumes = new Array(numLevels);
+                const askVolumes = new Array(numLevels);
+                const priceLabels = new Array(numLevels);
+                
+                const basePrice = 50000 + (Math.sin(Date.now() * 0.0001) * 500);
+                const midLevel = Math.floor(numLevels / 2);
+                
+                const timePhase = Date.now() * 0.001;
+                const marketCycle = Math.sin(timePhase * 0.1);
+                const volatilityPhase = Math.sin(timePhase * 0.3);
+                
+                for (let level = 0; level < numLevels; level++) {
+                    const distanceFromMid = Math.abs(level - midLevel);
+                    const normDistance = distanceFromMid / (numLevels / 2);
+                    
+                    const baseVolume = Math.exp(-distanceFromMid * 0.1) * 15;
+                    const cyclePattern = 1 + 0.5 * Math.sin(timePhase + level * 0.1);
+                    const volatilityBoost = 1 + 0.3 * Math.abs(volatilityPhase) * Math.exp(-normDistance * 2);
+                    const randomNoise = 0.7 + 0.6 * Math.random();
+                    
+                    const imbalance = marketCycle * 0.3;
+                    const bidBoost = level < midLevel ? (1 + Math.max(0, imbalance)) : (1 + Math.max(0, -imbalance));
+                    const askBoost = level > midLevel ? (1 + Math.max(0, -imbalance)) : (1 + Math.max(0, imbalance));
+                    
+                    bidVolumes[level] = level <= midLevel ? 
+                        baseVolume * cyclePattern * volatilityBoost * bidBoost * randomNoise : 0;
+                    askVolumes[level] = level >= midLevel ? 
+                        baseVolume * cyclePattern * volatilityBoost * askBoost * randomNoise : 0;
+                    
+                    if (level === midLevel) {
+                        bidVolumes[level] *= 0.3;
+                        askVolumes[level] *= 0.3;
+                    }
+                    
+                    priceLabels[level] = basePrice + (level - midLevel) * this.config.tickSize;
+                }
+                
+                // Random volume spikes
+                if (Math.random() < 0.1) {
+                    const spikeLevel = Math.floor(Math.random() * numLevels);
+                    const spikeIntensity = 3 + Math.random() * 7;
+                    
+                    if (bidVolumes[spikeLevel] > 0) bidVolumes[spikeLevel] *= spikeIntensity;
+                    if (askVolumes[spikeLevel] > 0) askVolumes[spikeLevel] *= spikeIntensity;
+                }
+                
+                return {
+                    bidVolumes, askVolumes, priceLabels,
+                    midPrice: basePrice, basePrice, 
+                    tickSize: this.config.tickSize,
+                    numLevels, timestamp: Date.now()
+                };
+            }
+            
+            redraw() {
+                if (this.dataBuffer.length > 0) {
+                    this.renderTimeSeriesHeatmap();
+                } else {
+                    this.clearCanvas();
+                }
+            }
+            
+            cleanup() {
+                if (this.syntheticInterval) {
+                    clearInterval(this.syntheticInterval);
+                }
+            }
+        }
+
+        // Global simulation variables
         let Module = null;
         let simulation = null;
+        let heatmapViz = null;
         let isInitialized = false;
         let isRunning = false;
         let updateCount = 0;
-        let lastLoggedQueueSize = 0;
         let spreadProfileCounter = 0;
 
         // DOM elements
         const elements = {
-            loading: document.getElementById('loading'),
-            error: document.getElementById('error'),
-            mainContent: document.getElementById('mainContent'),
             initBtn: document.getElementById('initBtn'),
             startBtn: document.getElementById('startBtn'),
             stopBtn: document.getElementById('stopBtn'),
+            resetBtn: document.getElementById('resetBtn'),
             simStatus: document.getElementById('simStatus'),
             queueSize: document.getElementById('queueSize'),
             updateCount: document.getElementById('updateCount'),
             currentSymbol: document.getElementById('currentSymbol'),
-            statusMessage: document.getElementById('statusMessage'),
-            noData: document.getElementById('noData'),
-            orderbook: document.getElementById('orderbook'),
+            l2UpdateCount: document.getElementById('l2UpdateCount'),
+            midPrice: document.getElementById('midPrice'),
+            spread: document.getElementById('spread'),
+            activeAgents: document.getElementById('activeAgents'),
+            spreadProfiles: document.getElementById('spreadProfiles'),
+            addSpreadProfile: document.getElementById('addSpreadProfile'),
             askLevels: document.getElementById('askLevels'),
             bidLevels: document.getElementById('bidLevels'),
-            spreadProfiles: document.getElementById('spreadProfiles'),
-            addSpreadProfile: document.getElementById('addSpreadProfile')
+            error: document.getElementById('error'),
+            errorMessage: document.getElementById('errorMessage')
         };
 
-        // Collapsible section functionality
+        // Utility functions
         function toggleSection(header) {
             const section = header.parentElement;
             section.classList.toggle('collapsed');
+        }
+
+        function showError(message) {
+            elements.error.classList.remove('hidden');
+            elements.errorMessage.textContent = message;
+            console.error('[System] Error:', message);
+        }
+
+        function hideError() {
+            elements.error.classList.add('hidden');
+        }
+
+        function updateStatus(status) {
+            elements.simStatus.textContent = status;
+            console.log('[System] Status:', status);
         }
 
         // Spread profile management
         function createSpreadProfile(profile = null) {
             const profileId = `profile_${++spreadProfileCounter}`;
             const defaultProfile = profile || {
-                global_low: 1,
-                global_high: 10,
-                alpha_loc: 1.0,
-                beta_loc: 1.0,
-                alpha_wid: 1.0,
-                beta_wid: 1.0,
-                weight: 1.0
+                global_low: 1, global_high: 10,
+                alpha_loc: 1.0, beta_loc: 1.0,
+                alpha_wid: 1.0, beta_wid: 1.0, weight: 1.0
             };
 
             const profileHtml = `
                 <div class="spread-profile" id="${profileId}">
                     <div class="spread-profile-header">
-                        <div class="spread-profile-title">Profile ${spreadProfileCounter}</div>
-                        <button class="profile-remove-btn" onclick="removeSpreadProfile('${profileId}')">×</button>
+                        <div class="profile-title">PROFILE.${spreadProfileCounter}</div>
+                        <button class="profile-remove" onclick="removeSpreadProfile('${profileId}')">×</button>
                     </div>
                     <div class="profile-grid">
-                        <div class="profile-form-group">
-                            <label>Global Low (BPS)</label>
-                            <input type="number" name="global_low" value="${defaultProfile.global_low}" min="1" max="1000" step="1">
-                        </div>
-                        <div class="profile-form-group">
-                            <label>Global High (BPS)</label>
-                            <input type="number" name="global_high" value="${defaultProfile.global_high}" min="1" max="1000" step="1">
-                        </div>
-                        <div class="profile-form-group">
-                            <label>Alpha Location</label>
-                            <input type="number" name="alpha_loc" value="${defaultProfile.alpha_loc}" min="0.1" max="10" step="0.1">
-                        </div>
-                        <div class="profile-form-group">
-                            <label>Beta Location</label>
-                            <input type="number" name="beta_loc" value="${defaultProfile.beta_loc}" min="0.1" max="10" step="0.1">
-                        </div>
-                        <div class="profile-form-group">
-                            <label>Alpha Width</label>
-                            <input type="number" name="alpha_wid" value="${defaultProfile.alpha_wid}" min="0.1" max="10" step="0.1">
-                        </div>
-                        <div class="profile-form-group">
-                            <label>Beta Width</label>
-                            <input type="number" name="beta_wid" value="${defaultProfile.beta_wid}" min="0.1" max="10" step="0.1">
-                        </div>
+                        <input class="profile-input" name="global_low" type="number" value="${defaultProfile.global_low}" min="1" max="1000" placeholder="LOW">
+                        <input class="profile-input" name="global_high" type="number" value="${defaultProfile.global_high}" min="1" max="1000" placeholder="HIGH">
+                        <input class="profile-input" name="alpha_loc" type="number" value="${defaultProfile.alpha_loc}" min="0.1" max="10" step="0.1" placeholder="A.LOC">
+                        <input class="profile-input" name="beta_loc" type="number" value="${defaultProfile.beta_loc}" min="0.1" max="10" step="0.1" placeholder="B.LOC">
+                        <input class="profile-input" name="alpha_wid" type="number" value="${defaultProfile.alpha_wid}" min="0.1" max="10" step="0.1" placeholder="A.WID">
+                        <input class="profile-input" name="beta_wid" type="number" value="${defaultProfile.beta_wid}" min="0.1" max="10" step="0.1" placeholder="B.WID">
                     </div>
-                    <div class="profile-form-group">
-                        <label>Weight</label>
-                        <input type="number" name="weight" value="${defaultProfile.weight}" min="0.1" max="10" step="0.1">
-                    </div>
-                    <div class="profile-preview">
-                        Spread: ${defaultProfile.global_low}-${defaultProfile.global_high} BPS, 
-                        Location: α=${defaultProfile.alpha_loc} β=${defaultProfile.beta_loc}, 
-                        Width: α=${defaultProfile.alpha_wid} β=${defaultProfile.beta_wid}, 
-                        Weight: ${defaultProfile.weight}
-                    </div>
+                    <input class="profile-input" name="weight" type="number" value="${defaultProfile.weight}" min="0.1" max="10" step="0.1" placeholder="WEIGHT" style="margin-top: 5px;">
                 </div>
             `;
 
             elements.spreadProfiles.insertAdjacentHTML('beforeend', profileHtml);
-            updateProfilePreview(profileId);
-            
-            // Add event listeners for live preview updates
-            const profileElement = document.getElementById(profileId);
-            const inputs = profileElement.querySelectorAll('input');
-            inputs.forEach(input => {
-                input.addEventListener('input', () => updateProfilePreview(profileId));
-            });
         }
 
         function removeSpreadProfile(profileId) {
             const profile = document.getElementById(profileId);
-            if (profile) {
-                profile.remove();
-            }
-        }
-
-        function updateProfilePreview(profileId) {
-            const profile = document.getElementById(profileId);
-            const inputs = profile.querySelectorAll('input');
-            const values = {};
-            inputs.forEach(input => {
-                values[input.name] = parseFloat(input.value);
-            });
-
-            const preview = profile.querySelector('.profile-preview');
-            preview.textContent = `Spread: ${values.global_low}-${values.global_high} BPS, ` +
-                                  `Location: α=${values.alpha_loc} β=${values.beta_loc}, ` +
-                                  `Width: α=${values.alpha_wid} β=${values.beta_wid}, ` +
-                                  `Weight: ${values.weight}`;
+            if (profile) profile.remove();
         }
 
         function getSpreadProfiles() {
@@ -883,78 +1234,6 @@
             return profiles;
         }
 
-        // Input validation
-        function validateInputs() {
-            const errors = [];
-            
-            // Basic parameter validation
-            const agents = parseInt(document.getElementById('agents').value);
-            if (agents < 1 || agents > 1000) {
-                errors.push('Number of agents must be between 1 and 1000');
-            }
-            
-            // Order size validation
-            const minSizeMin = parseFloat(document.getElementById('minSizeMin').value);
-            const minSizeMax = parseFloat(document.getElementById('minSizeMax').value);
-            const maxSizeMin = parseFloat(document.getElementById('maxSizeMin').value);
-            const maxSizeMax = parseFloat(document.getElementById('maxSizeMax').value);
-            
-            if (minSizeMin >= minSizeMax) {
-                errors.push('Min size range: first value must be less than second value');
-            }
-            if (maxSizeMin >= maxSizeMax) {
-                errors.push('Max size range: first value must be less than second value');
-            }
-            if (minSizeMax > maxSizeMin) {
-                errors.push('Min size max should not exceed max size min');
-            }
-            
-            // Timeout validation
-            const minTimeout = parseFloat(document.getElementById('minTimeoutS').value);
-            const maxTimeout = parseFloat(document.getElementById('maxTimeoutS').value);
-            if (minTimeout >= maxTimeout) {
-                errors.push('Min timeout must be less than max timeout');
-            }
-            
-            // Imbalance validation
-            const imbalanceLevelsMin = parseInt(document.getElementById('imbalanceLevelsMin').value);
-            const imbalanceLevelsMax = parseInt(document.getElementById('imbalanceLevelsMax').value);
-            if (imbalanceLevelsMin > imbalanceLevelsMax) {
-                errors.push('Imbalance levels: min must be ≤ max');
-            }
-            
-            const maxImbalanceAdjMin = parseInt(document.getElementById('maxImbalanceAdjMin').value);
-            const maxImbalanceAdjMax = parseInt(document.getElementById('maxImbalanceAdjMax').value);
-            if (maxImbalanceAdjMin > maxImbalanceAdjMax) {
-                errors.push('Max imbalance adjustment: min must be ≤ max');
-            }
-            
-            // Warmup validation
-            const warmupMin = parseInt(document.getElementById('warmupMin').value);
-            const warmupMax = parseInt(document.getElementById('warmupMax').value);
-            if (warmupMin > warmupMax) {
-                errors.push('Warmup range: min must be ≤ max');
-            }
-            
-            // Spread profile validation
-            const profiles = getSpreadProfiles();
-            if (profiles.length === 0) {
-                errors.push('At least one spread profile is required');
-            }
-            
-            profiles.forEach((profile, index) => {
-                if (profile.global_low >= profile.global_high) {
-                    errors.push(`Spread profile ${index + 1}: Global low must be less than global high`);
-                }
-                if (profile.weight <= 0) {
-                    errors.push(`Spread profile ${index + 1}: Weight must be positive`);
-                }
-            });
-            
-            return errors;
-        }
-
-        // Preset spread profiles
         function addPresetProfile(preset) {
             const presets = {
                 'tight': { global_low: 1, global_high: 3, alpha_loc: 0.5, beta_loc: 4.0, alpha_wid: 0.8, beta_wid: 8.0, weight: 1.0 },
@@ -967,103 +1246,49 @@
             }
         }
 
-        // Reset to default values
-        function resetToDefaults() {
-            // Basic parameters
-            document.getElementById('agents').value = 10;
-            document.getElementById('symbol').value = 'BTC/USD';
-            document.getElementById('seed').value = 47;
-            document.getElementById('speedFactor').value = 100;
+        // Input validation
+        function validateInputs() {
+            const errors = [];
             
-            // Order timeout parameters
-            document.getElementById('timeoutDist').value = 'lognormal';
-            document.getElementById('medianTimeout').value = 5;
-            document.getElementById('sigmaTimeout').value = 0.8;
-            document.getElementById('paretoAlpha').value = 1.5;
-            document.getElementById('paretoScale').value = 5;
-            document.getElementById('tailMix').value = 0.1;
-            document.getElementById('minTimeoutS').value = 1;
-            document.getElementById('maxTimeoutS').value = 60;
-            
-            // Order size parameters
-            document.getElementById('minSizeMin').value = 0.01;
-            document.getElementById('minSizeMax').value = 0.1;
-            document.getElementById('maxSizeMin').value = 0.1;
-            document.getElementById('maxSizeMax').value = 0.5;
-            
-            // Imbalance parameters
-            document.getElementById('imbalanceLevelsMin').value = 1;
-            document.getElementById('imbalanceLevelsMax').value = 3;
-            document.getElementById('maxImbalanceAdjMin').value = 2;
-            document.getElementById('maxImbalanceAdjMax').value = 10;
-            
-            // Advanced settings
-            document.getElementById('warmupMin').value = 0;
-            document.getElementById('warmupMax').value = 0;
-            document.getElementById('seedLevels').value = 5;
-            
-            // Reset spread profiles to defaults
-            initializeDefaultSpreadProfiles();
-            
-            console.log('[JavaScript] Settings reset to defaults');
-        }
-
-        // Initialize default spread profiles
-        function initializeDefaultSpreadProfiles() {
-            // Clear existing profiles
-            elements.spreadProfiles.innerHTML = '';
-            spreadProfileCounter = 0;
-            
-            // Add default profiles
-            createSpreadProfile({ global_low: 1, global_high: 5, alpha_loc: 0.7, beta_loc: 3.0, alpha_wid: 1.0, beta_wid: 6.0, weight: 0.5 });
-            createSpreadProfile({ global_low: 50, global_high: 100, alpha_loc: 3.0, beta_loc: 0.7, alpha_wid: 6.0, beta_wid: 1.0, weight: 0.5 });
-        }
-
-        // Error handling
-        function showError(message) {
-            elements.error.textContent = message;
-            elements.error.classList.remove('hidden');
-            elements.loading.classList.add('hidden');
-        }
-
-        // Status updates
-        function updateStatus(status) {
-            elements.simStatus.textContent = status;
-            elements.statusMessage.textContent = `Simulation status: ${status}`;
-        }
-
-        function updateQueueSize() {
-            if (simulation) {
-                elements.queueSize.textContent = simulation.getQueueSize();
+            const agents = parseInt(document.getElementById('agents').value);
+            if (agents < 1 || agents > 1000) {
+                errors.push('Agents must be between 1 and 1000');
             }
+            
+            const profiles = getSpreadProfiles();
+            if (profiles.length === 0) {
+                errors.push('At least one spread profile required');
+            }
+            
+            profiles.forEach((profile, index) => {
+                if (profile.global_low >= profile.global_high) {
+                    errors.push(`Profile ${index + 1}: Low must be < High`);
+                }
+                if (profile.weight <= 0) {
+                    errors.push(`Profile ${index + 1}: Weight must be positive`);
+                }
+            });
+            
+            return errors;
         }
 
         // L2 order book callback
         function onL2Update(event) {
-            console.log('[JavaScript] L2 callback called!', event);
-            console.log('[JavaScript] Symbol:', event.symbol);
-            console.log('[JavaScript] Bids count:', event.bids ? event.bids.length : 'undefined');
-            console.log('[JavaScript] Asks count:', event.asks ? event.asks.length : 'undefined');
-            
-            if (event.bids && event.bids.length > 0) {
-                console.log('[JavaScript] Best bid:', event.bids[0]);
-            }
-            if (event.asks && event.asks.length > 0) {
-                console.log('[JavaScript] Best ask:', event.asks[0]);
-            }
-            
             updateCount++;
             elements.updateCount.textContent = updateCount;
+            elements.l2UpdateCount.textContent = updateCount;
             elements.currentSymbol.textContent = event.symbol;
 
-            // Show order book if hidden
-            if (elements.orderbook.classList.contains('hidden')) {
-                console.log('[JavaScript] Showing order book for first time');
-                elements.noData.classList.add('hidden');
-                elements.orderbook.classList.remove('hidden');
+            // Calculate and display mid price and spread
+            if (event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0) {
+                const midPrice = (event.bids[0].price + event.asks[0].price) / 2;
+                const spread = event.asks[0].price - event.bids[0].price;
+                
+                elements.midPrice.textContent = midPrice.toFixed(2);
+                elements.spread.textContent = spread.toFixed(2);
             }
 
-            // Update asks (reverse order for display)
+            // Update orderbook display
             const askHtml = event.asks.slice().reverse().map(level => 
                 `<div class="orderbook-level">
                     <div class="price">${level.price.toFixed(2)}</div>
@@ -1072,7 +1297,6 @@
             ).join('');
             elements.askLevels.innerHTML = askHtml;
 
-            // Update bids
             const bidHtml = event.bids.map(level => 
                 `<div class="orderbook-level">
                     <div class="price">${level.price.toFixed(2)}</div>
@@ -1082,133 +1306,32 @@
             elements.bidLevels.innerHTML = bidHtml;
 
             // Update queue size
-            updateQueueSize();
-            
-            // Send to heatmap window if open
-            if (heatmapWindow && !heatmapWindow.closed) {
-                try {
-                    heatmapWindow.onL2Update(event);
-                } catch (e) {
-                    console.log('[JavaScript] Heatmap window not ready or closed');
-                }
+            if (simulation) {
+                elements.queueSize.textContent = simulation.getQueueSize();
             }
-            
-            console.log('[JavaScript] L2 callback completed, updateCount:', updateCount);
+
+            // Forward to heatmap
+            if (heatmapViz) {
+                heatmapViz.onL2Update(event);
+            }
         }
 
         // Heatmap callback
         function onHeatmapUpdate(heatmapData) {
-            console.log('[JavaScript] Heatmap callback called!', heatmapData);
-            
-            // Update status
-            const heatmapUpdateCount = document.getElementById('heatmapUpdateCount');
-            if (heatmapUpdateCount) {
-                heatmapUpdateCount.textContent = parseInt(heatmapUpdateCount.textContent) + 1;
+            if (heatmapViz) {
+                heatmapViz.onHeatmapUpdate(heatmapData);
             }
-            
-            // Send to heatmap window if open
-            if (heatmapWindow && !heatmapWindow.closed) {
-                try {
-                    heatmapWindow.onHeatmapUpdate(heatmapData);
-                } catch (e) {
-                    console.log('[JavaScript] Heatmap window not ready or closed');
-                }
-            }
-        }
-
-        // Heatmap window management
-        let heatmapWindow = null;
-        
-        function openHeatmapWindow() {
-            if (heatmapWindow && !heatmapWindow.closed) {
-                heatmapWindow.focus();
-                return;
-            }
-            
-            const width = 1400;
-            const height = 900;
-            const left = (screen.width - width) / 2;
-            const top = (screen.height - height) / 2;
-            
-            heatmapWindow = window.open(
-                'heatmap.html',
-                'OrderbookHeatmap',
-                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no`
-            );
-            
-            if (heatmapWindow) {
-                console.log('[JavaScript] Heatmap window opened');
-                
-                // Check when window is ready and set up communication
-                const checkReady = setInterval(() => {
-                    try {
-                        if (heatmapWindow.heatmapViz) {
-                            console.log('[JavaScript] Heatmap window ready for communication');
-                            clearInterval(checkReady);
-                        }
-                    } catch (e) {
-                        // Window not ready yet
-                    }
-                }, 100);
-                
-                // Clean up interval after 10 seconds
-                setTimeout(() => clearInterval(checkReady), 10000);
-            } else {
-                alert('Please allow popups for this site to open the heatmap visualization.');
-            }
-        }
-
-        // Heatmap configuration functions
-        function toggleHeatmapConfig() {
-            const configPanel = document.getElementById('heatmapConfig');
-            const configBtn = document.getElementById('heatmapConfigBtn');
-            
-            if (configPanel && configBtn) {
-                configPanel.classList.toggle('hidden');
-                configBtn.textContent = configPanel.classList.contains('hidden') ? '⚙️ Config' : '⚙️ Close';
-            }
-        }
-        
-        function updateHeatmapStatus(status) {
-            const statusElement = document.getElementById('heatmapStatus');
-            if (statusElement) {
-                statusElement.textContent = status;
-            }
-        }
-        
-        function updateHeatmapWindowStatus() {
-            const statusElement = document.getElementById('heatmapWindowStatus');
-            if (statusElement) {
-                if (heatmapWindow && !heatmapWindow.closed) {
-                    statusElement.textContent = 'Open';
-                    statusElement.style.color = '#38a169'; // Green
-                } else {
-                    statusElement.textContent = 'Closed';
-                    statusElement.style.color = '#e53e3e'; // Red
-                }
-            }
-        }
-        
-        function getHeatmapConfig() {
-            return {
-                bufferSize: parseInt(document.getElementById('heatmapBufferSize')?.value || 300),
-                priceLevels: parseInt(document.getElementById('heatmapPriceLevels')?.value || 200),
-                tickSize: parseFloat(document.getElementById('heatmapTickSize')?.value || 1.0),
-                updateFreq: parseInt(document.getElementById('heatmapUpdateFreq')?.value || 5),
-                enabled: document.getElementById('heatmapEnabled')?.checked || true
-            };
         }
 
         // Simulation control functions
         function initializeSimulation() {
-            console.log('[JavaScript] initializeSimulation called');
+            hideError();
             
             if (!Module || !Module.ExchangeSimulation) {
-                showError('WebAssembly module not loaded properly');
+                showError('WebAssembly module not loaded');
                 return;
             }
 
-            // Validate inputs first
             const validationErrors = validateInputs();
             if (validationErrors.length > 0) {
                 showError('Validation errors:\n• ' + validationErrors.join('\n• '));
@@ -1216,26 +1339,20 @@
             }
 
             try {
-                // Create new simulation instance
                 if (simulation) {
                     simulation.cleanup();
                     simulation.delete();
                 }
 
-                console.log('[JavaScript] Creating new ExchangeSimulation instance');
                 simulation = new Module.ExchangeSimulation();
 
-                // Configure basic parameters
-                const agentCount = parseInt(document.getElementById('agents').value);
-                const symbol = document.getElementById('symbol').value;
-                console.log('[JavaScript] Configuring simulation: agents=' + agentCount + ', symbol=' + symbol);
-                
-                simulation.setAgents(agentCount);
-                simulation.setSymbol(symbol);
+                // Configure parameters
+                simulation.setAgents(parseInt(document.getElementById('agents').value));
+                simulation.setSymbol(document.getElementById('symbol').value);
                 simulation.setSeed(parseInt(document.getElementById('seed').value));
                 simulation.setSpeedFactor(parseFloat(document.getElementById('speedFactor').value));
 
-                // Configure order timeout parameters
+                // Timeout parameters
                 simulation.setTimeoutDistribution(document.getElementById('timeoutDist').value);
                 simulation.setMedianTimeoutSeconds(parseFloat(document.getElementById('medianTimeout').value));
                 simulation.setSigmaTimeout(parseFloat(document.getElementById('sigmaTimeout').value));
@@ -1245,151 +1362,108 @@
                 simulation.setMinTimeoutS(parseFloat(document.getElementById('minTimeoutS').value));
                 simulation.setMaxTimeoutS(parseFloat(document.getElementById('maxTimeoutS').value));
 
-                // Configure order size ranges
-                const minSizeMin = parseFloat(document.getElementById('minSizeMin').value);
-                const minSizeMax = parseFloat(document.getElementById('minSizeMax').value);
-                const maxSizeMin = parseFloat(document.getElementById('maxSizeMin').value);
-                const maxSizeMax = parseFloat(document.getElementById('maxSizeMax').value);
-                simulation.setOrderSizeRanges(minSizeMin, minSizeMax, maxSizeMin, maxSizeMax);
+                // Order sizes
+                simulation.setOrderSizeRanges(
+                    parseFloat(document.getElementById('minSizeMin').value),
+                    parseFloat(document.getElementById('minSizeMax').value),
+                    parseFloat(document.getElementById('maxSizeMin').value),
+                    parseFloat(document.getElementById('maxSizeMax').value)
+                );
 
-                // Configure imbalance parameters
-                const imbalanceLevelsMin = parseInt(document.getElementById('imbalanceLevelsMin').value);
-                const imbalanceLevelsMax = parseInt(document.getElementById('imbalanceLevelsMax').value);
-                const maxImbalanceAdjMin = parseInt(document.getElementById('maxImbalanceAdjMin').value);
-                const maxImbalanceAdjMax = parseInt(document.getElementById('maxImbalanceAdjMax').value);
-                simulation.setImbalanceParams(imbalanceLevelsMin, imbalanceLevelsMax, maxImbalanceAdjMin, maxImbalanceAdjMax);
+                // Imbalance parameters
+                simulation.setImbalanceParams(
+                    parseInt(document.getElementById('imbalanceLevelsMin').value),
+                    parseInt(document.getElementById('imbalanceLevelsMax').value),
+                    parseInt(document.getElementById('maxImbalanceAdjMin').value),
+                    parseInt(document.getElementById('maxImbalanceAdjMax').value)
+                );
 
-                // Configure advanced settings
-                const warmupMin = parseInt(document.getElementById('warmupMin').value);
-                const warmupMax = parseInt(document.getElementById('warmupMax').value);
-                simulation.setWarmupRangeMs(warmupMin, warmupMax);
+                // Advanced settings
+                simulation.setWarmupRangeMs(
+                    parseInt(document.getElementById('warmupMin').value),
+                    parseInt(document.getElementById('warmupMax').value)
+                );
                 simulation.setOrderBookSeedLevels(parseInt(document.getElementById('seedLevels').value));
 
-                // Configure spread profiles
-                console.log('[JavaScript] Configuring spread profiles...');
-                const spreadProfiles = getSpreadProfiles();
-                console.log('[JavaScript] Found ' + spreadProfiles.length + ' spread profiles');
-                
+                // Spread profiles
                 simulation.clearSpreadProfiles();
-                spreadProfiles.forEach((profile, index) => {
-                    console.log('[JavaScript] Adding spread profile ' + (index + 1) + ':', profile);
+                const spreadProfiles = getSpreadProfiles();
+                spreadProfiles.forEach(profile => {
                     simulation.addSpreadProfile(
-                        profile.global_low,
-                        profile.global_high,
-                        profile.alpha_loc,
-                        profile.beta_loc,
-                        profile.alpha_wid,
-                        profile.beta_wid,
+                        profile.global_low, profile.global_high,
+                        profile.alpha_loc, profile.beta_loc,
+                        profile.alpha_wid, profile.beta_wid,
                         profile.weight
                     );
                 });
 
-                // Set L2 callback
-                console.log('[JavaScript] Setting L2 callback...');
+                // Set callbacks
                 simulation.setL2Callback(onL2Update);
-                console.log('[JavaScript] L2 callback set successfully');
-
-                // Set heatmap callback
-                console.log('[JavaScript] Setting heatmap callback...');
                 simulation.setHeatmapCallback(onHeatmapUpdate);
-                console.log('[JavaScript] Heatmap callback set successfully');
-                
-                // Configure heatmap parameters
-                const heatmapConfig = getHeatmapConfig();
-                console.log('[JavaScript] Configuring heatmap with settings:', heatmapConfig);
-                
-                try {
-                    if (simulation.setHeatmapBufferSize) {
-                        simulation.setHeatmapBufferSize(heatmapConfig.bufferSize);
-                    }
-                    if (simulation.setHeatmapFrequency) {
-                        simulation.setHeatmapFrequency(heatmapConfig.updateFreq);
-                    }
-                    if (simulation.setHeatmapUpdates) {
-                        simulation.setHeatmapUpdates(heatmapConfig.enabled);
-                    }
-                    
-                    updateHeatmapStatus('Configured');
-                    console.log('[JavaScript] Heatmap configuration applied successfully');
-                    console.log('[JavaScript] Note: Price levels and tick size are fixed at construction time');
-                } catch (error) {
-                    console.warn('[JavaScript] Heatmap configuration error:', error);
-                    updateHeatmapStatus('Config Error');
+
+                // Heatmap configuration
+                if (simulation.setHeatmapBufferSize) {
+                    simulation.setHeatmapBufferSize(parseInt(document.getElementById('heatmapBufferSize').value));
+                }
+                if (simulation.setHeatmapFrequency) {
+                    simulation.setHeatmapFrequency(parseInt(document.getElementById('heatmapUpdateFreq').value));
+                }
+                if (simulation.setHeatmapUpdates) {
+                    simulation.setHeatmapUpdates(document.getElementById('heatmapEnabled').checked);
                 }
 
                 // Initialize
-                console.log('[JavaScript] Calling simulation.initialize()...');
                 const success = simulation.initialize();
-                console.log('[JavaScript] Initialize result:', success);
-                
                 if (!success) {
                     throw new Error('Failed to initialize simulation');
                 }
 
                 isInitialized = true;
-                updateStatus('Initialized');
+                updateStatus('READY');
                 elements.startBtn.disabled = false;
-                elements.statusMessage.textContent = 'Simulation initialized successfully. Ready to start.';
-                
-                console.log('[JavaScript] Simulation initialized successfully, queue size:', simulation.getQueueSize());
+                elements.activeAgents.textContent = document.getElementById('agents').value;
 
             } catch (error) {
-                console.error('[JavaScript] Initialization error:', error);
                 showError(`Initialization failed: ${error.message}`);
                 isInitialized = false;
             }
         }
 
         function startSimulation() {
-            console.log('[JavaScript] startSimulation called, isInitialized:', isInitialized, 'isRunning:', isRunning);
-            
             if (!isInitialized || isRunning) return;
 
             try {
-                updateStatus('Starting...');
-                console.log('[JavaScript] Calling simulation.start()...');
+                updateStatus('STARTING');
                 const success = simulation.start();
-                console.log('[JavaScript] Start result:', success);
                 
                 if (success) {
                     isRunning = true;
-                    updateStatus('Running');
+                    updateStatus('RUNNING');
                     elements.startBtn.disabled = true;
                     elements.stopBtn.disabled = false;
                     elements.initBtn.disabled = true;
                     
-                    console.log('[JavaScript] Simulation started, initial queue size:', simulation.getQueueSize());
-                    
-                    // Start monitoring queue size
+                    // Monitor queue
                     const monitor = setInterval(() => {
                         if (!isRunning) {
                             clearInterval(monitor);
                             return;
                         }
-                        const queueSize = simulation.getQueueSize();
-                        updateQueueSize();
                         
-                        // Log queue size changes
-                        if (queueSize !== lastLoggedQueueSize) {
-                            console.log('[JavaScript] Queue size changed:', queueSize);
-                            lastLoggedQueueSize = queueSize;
-                        }
+                        const queueSize = simulation.getQueueSize();
+                        elements.queueSize.textContent = queueSize;
                         
                         if (queueSize === 0) {
-                            // Simulation finished
-                            console.log('[JavaScript] Queue empty, stopping simulation');
                             stopSimulation();
-                            updateStatus('Completed');
-                            elements.statusMessage.textContent = 'Simulation completed successfully.';
+                            updateStatus('COMPLETE');
                         }
                     }, 100);
                 } else {
                     throw new Error('Failed to start simulation');
                 }
             } catch (error) {
-                console.error('[JavaScript] Start error:', error);
                 showError(`Start failed: ${error.message}`);
-                updateStatus('Error');
+                updateStatus('ERROR');
             }
         }
 
@@ -1399,66 +1473,139 @@
             try {
                 simulation.stop();
                 isRunning = false;
-                updateStatus('Stopped');
+                updateStatus('STOPPED');
                 elements.startBtn.disabled = false;
                 elements.stopBtn.disabled = true;
                 elements.initBtn.disabled = false;
-                elements.statusMessage.textContent = 'Simulation stopped.';
             } catch (error) {
                 showError(`Stop failed: ${error.message}`);
             }
+        }
+
+        function resetToDefaults() {
+            // Reset form values
+            document.getElementById('agents').value = 10;
+            document.getElementById('symbol').value = 'BTC/USD';
+            document.getElementById('seed').value = 47;
+            document.getElementById('speedFactor').value = 100;
+            
+            document.getElementById('timeoutDist').value = 'lognormal';
+            document.getElementById('medianTimeout').value = 5;
+            document.getElementById('sigmaTimeout').value = 0.8;
+            document.getElementById('paretoAlpha').value = 1.5;
+            document.getElementById('paretoScale').value = 5;
+            document.getElementById('tailMix').value = 0.1;
+            document.getElementById('minTimeoutS').value = 1;
+            document.getElementById('maxTimeoutS').value = 60;
+            
+            document.getElementById('minSizeMin').value = 0.01;
+            document.getElementById('minSizeMax').value = 0.1;
+            document.getElementById('maxSizeMin').value = 0.1;
+            document.getElementById('maxSizeMax').value = 0.5;
+            
+            document.getElementById('imbalanceLevelsMin').value = 1;
+            document.getElementById('imbalanceLevelsMax').value = 3;
+            document.getElementById('maxImbalanceAdjMin').value = 2;
+            document.getElementById('maxImbalanceAdjMax').value = 10;
+            
+            document.getElementById('warmupMin').value = 0;
+            document.getElementById('warmupMax').value = 0;
+            document.getElementById('seedLevels').value = 5;
+            
+            document.getElementById('heatmapBufferSize').value = 300;
+            document.getElementById('heatmapUpdateFreq').value = 5;
+            document.getElementById('heatmapIntensity').value = 3;
+            document.getElementById('heatmapEnabled').checked = true;
+            
+            // Reset spread profiles
+            initializeDefaultSpreadProfiles();
+            
+            console.log('[System] Reset to defaults');
+        }
+
+        function initializeDefaultSpreadProfiles() {
+            elements.spreadProfiles.innerHTML = '';
+            spreadProfileCounter = 0;
+            
+            createSpreadProfile({ global_low: 1, global_high: 5, alpha_loc: 0.7, beta_loc: 3.0, alpha_wid: 1.0, beta_wid: 6.0, weight: 0.5 });
+            createSpreadProfile({ global_low: 50, global_high: 100, alpha_loc: 3.0, beta_loc: 0.7, alpha_wid: 6.0, beta_wid: 1.0, weight: 0.5 });
         }
 
         // Event listeners
         elements.initBtn.addEventListener('click', initializeSimulation);
         elements.startBtn.addEventListener('click', startSimulation);
         elements.stopBtn.addEventListener('click', stopSimulation);
+        elements.resetBtn.addEventListener('click', resetToDefaults);
         elements.addSpreadProfile.addEventListener('click', () => createSpreadProfile());
 
-        // Heatmap status monitoring
-        setInterval(() => {
-            updateHeatmapWindowStatus();
-        }, 1000);
-
-        // Load WebAssembly module
+        // Initialize system
         function loadModule() {
+            console.log('[System] Loading WebAssembly module...');
+            
             if (typeof ExchangeSimulationModule === 'undefined') {
-                showError('ExchangeSimulationModule not found. Please ensure exchange_simulation.js is loaded.');
+                showError('ExchangeSimulationModule not found');
                 return;
             }
 
             ExchangeSimulationModule().then(module => {
                 Module = module;
-                elements.loading.classList.add('hidden');
-                elements.mainContent.classList.remove('hidden');
-                updateStatus('Ready');
+                console.log('[System] WebAssembly module loaded');
                 
-                // Initialize default spread profiles
+                // Initialize heatmap visualization
+                heatmapViz = new OrderbookHeatmap();
+                
+                // Initialize default profiles
                 initializeDefaultSpreadProfiles();
                 
-                console.log('WebAssembly module loaded successfully');
+                updateStatus('LOADED');
+                
             }).catch(error => {
-                showError(`Failed to load WebAssembly module: ${error.message}`);
-                console.error('Module loading error:', error);
+                showError(`Failed to load WebAssembly: ${error.message}`);
             });
         }
 
         // Auto-load when page is ready
         window.addEventListener('load', () => {
-            // Small delay to ensure all scripts are loaded
             setTimeout(loadModule, 100);
         });
 
-        // Cleanup on page unload
+        // Cleanup
         window.addEventListener('beforeunload', () => {
             if (simulation) {
                 simulation.cleanup();
                 simulation.delete();
             }
+            if (heatmapViz) {
+                heatmapViz.cleanup();
+            }
+        });
+
+        // Keyboard shortcuts for Ikeda-style control
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+            
+            switch(e.code) {
+                case 'KeyI':
+                    if (!isInitialized) initializeSimulation();
+                    break;
+                case 'Space':
+                    e.preventDefault();
+                    if (isInitialized && !isRunning) startSimulation();
+                    else if (isRunning) stopSimulation();
+                    break;
+                case 'KeyR':
+                    if (e.ctrlKey || e.metaKey) return;
+                    e.preventDefault();
+                    resetToDefaults();
+                    break;
+                case 'Escape':
+                    if (isRunning) stopSimulation();
+                    break;
+            }
         });
     </script>
 
-    <!-- Load the WebAssembly module -->
+    <!-- Load WebAssembly module -->
     <script src="exchange_simulation.js"></script>
 </body>
 </html> 
