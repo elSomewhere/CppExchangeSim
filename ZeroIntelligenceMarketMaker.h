@@ -1,8 +1,8 @@
 #pragma once
 
-#include "AlgoBase.h"       // Base class using CRTP
-#include "Model.h"          // Event types, conversions, aliases
-#include "Logging.h"
+#include "src/AlgoBase.h"       // Base class using CRTP
+#include "src/Model.h"          // Event types, conversions, aliases
+#include "src/Logging.h"
 #include <random>           // For C++ random number generation
 #include <cmath>            // For std::log, std::pow, std::max, std::min
 #include <vector>

@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exchange Simulation - WebAssembly Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            height: calc(100vh - 180px);
+        }
+
+        .controls-panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow-y: auto;
+        }
+
+        .controls-section {
+            margin-bottom: 25px;
+        }
+
+        .controls-section h3 {
+            color: #4a5568;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 5px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #2d3748;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #718096;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4a5568;
+        }
+
+        .btn-danger {
+            background: #e53e3e;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c53030;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .button-group .btn {
+            flex: 1;
+        }
+
+        .display-panel {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .display-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .display-header h2 {
+            margin-bottom: 10px;
+        }
+
+        .status-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .status-item {
+            text-align: center;
+        }
+
+        .status-item .label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .status-item .value {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .orderbook-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .orderbook {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            height: 100%;
+        }
+
+        .orderbook-side {
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .orderbook-asks {
+            background: linear-gradient(135deg, #fed7d7 0%, #feb2b2 100%);
+        }
+
+        .orderbook-bids {
+            background: linear-gradient(135deg, #c6f6d5 0%, #9ae6b4 100%);
+        }
+
+        .orderbook-side h3 {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            color: #2d3748;
+        }
+
+        .orderbook-level {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .price {
+            text-align: right;
+            font-weight: bold;
+        }
+
+        .quantity {
+            text-align: left;
+            color: #4a5568;
+        }
+
+        .status-bar {
+            background: #f7fafc;
+            padding: 15px 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .status-message {
+            font-size: 14px;
+            color: #4a5568;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Responsive design */
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+            }
+            
+            .controls-panel {
+                max-height: 300px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .orderbook {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+            
+            .status-info {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏦 Exchange Simulation</h1>
+            <p>Real-time order book simulation powered by WebAssembly</p>
+        </div>
+
+        <div id="loading" class="loading">
+            <h3>Loading WebAssembly module...</h3>
+            <p>Please wait while the simulation engine initializes.</p>
+        </div>
+
+        <div id="error" class="error hidden"></div>
+
+        <div id="mainContent" class="main-grid hidden">
+            <div class="controls-panel">
+                <div class="controls-section">
+                    <h3>📊 Simulation Parameters</h3>
+                    <div class="form-group">
+                        <label for="agents">Number of Agents</label>
+                        <input type="number" id="agents" min="10" max="1000" value="100">
+                    </div>
+                    <div class="form-group">
+                        <label for="symbol">Trading Symbol</label>
+                        <input type="text" id="symbol" value="BTC/USD">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="seed">Random Seed</label>
+                            <input type="number" id="seed" value="47">
+                        </div>
+                        <div class="form-group">
+                            <label for="speedFactor">Speed Factor</label>
+                            <input type="number" id="speedFactor" min="1" max="1000" value="100" step="10">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls-section">
+                    <h3>⏱️ Order Timeouts</h3>
+                    <div class="form-group">
+                        <label for="timeoutDist">Distribution</label>
+                        <select id="timeoutDist">
+                            <option value="lognormal">Log-normal</option>
+                            <option value="pareto">Pareto</option>
+                            <option value="lognormal_pareto_mix">Mixed</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="medianTimeout">Median (s)</label>
+                            <input type="number" id="medianTimeout" min="0.1" max="60" value="5" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="sigmaTimeout">Sigma</label>
+                            <input type="number" id="sigmaTimeout" min="0.1" max="2" value="0.8" step="0.1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls-section">
+                    <h3>💰 Order Sizes</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="minSizeMin">Min Size Range</label>
+                            <input type="number" id="minSizeMin" min="0.001" max="1" value="0.01" step="0.001">
+                        </div>
+                        <div class="form-group">
+                            <label for="minSizeMax"></label>
+                            <input type="number" id="minSizeMax" min="0.001" max="1" value="0.1" step="0.001">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="maxSizeMin">Max Size Range</label>
+                            <input type="number" id="maxSizeMin" min="0.001" max="10" value="0.1" step="0.001">
+                        </div>
+                        <div class="form-group">
+                            <label for="maxSizeMax"></label>
+                            <input type="number" id="maxSizeMax" min="0.001" max="10" value="0.5" step="0.001">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button id="initBtn" class="btn btn-primary">Initialize</button>
+                    <button id="startBtn" class="btn btn-secondary" disabled>Start</button>
+                    <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
+                </div>
+            </div>
+
+            <div class="display-panel">
+                <div class="display-header">
+                    <h2>📈 Live Order Book</h2>
+                    <div class="status-info">
+                        <div class="status-item">
+                            <div class="label">Status</div>
+                            <div id="simStatus" class="value">Idle</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="label">Queue Size</div>
+                            <div id="queueSize" class="value">0</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="label">L2 Updates</div>
+                            <div id="updateCount" class="value">0</div>
+                        </div>
+                        <div class="status-item">
+                            <div class="label">Symbol</div>
+                            <div id="currentSymbol" class="value">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="orderbook-container">
+                    <div id="noData" class="loading">
+                        <h3>No order book data</h3>
+                        <p>Initialize and start the simulation to see live data.</p>
+                    </div>
+
+                    <div id="orderbook" class="orderbook hidden">
+                        <div class="orderbook-side orderbook-asks">
+                            <h3>🔴 ASKS (Sell Orders)</h3>
+                            <div id="askLevels"></div>
+                        </div>
+                        <div class="orderbook-side orderbook-bids">
+                            <h3>🟢 BIDS (Buy Orders)</h3>
+                            <div id="bidLevels"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="status-bar">
+                    <div id="statusMessage" class="status-message">Ready to initialize simulation.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let Module = null;
+        let simulation = null;
+        let isInitialized = false;
+        let isRunning = false;
+        let updateCount = 0;
+        let lastLoggedQueueSize = 0;
+
+        // DOM elements
+        const elements = {
+            loading: document.getElementById('loading'),
+            error: document.getElementById('error'),
+            mainContent: document.getElementById('mainContent'),
+            initBtn: document.getElementById('initBtn'),
+            startBtn: document.getElementById('startBtn'),
+            stopBtn: document.getElementById('stopBtn'),
+            simStatus: document.getElementById('simStatus'),
+            queueSize: document.getElementById('queueSize'),
+            updateCount: document.getElementById('updateCount'),
+            currentSymbol: document.getElementById('currentSymbol'),
+            statusMessage: document.getElementById('statusMessage'),
+            noData: document.getElementById('noData'),
+            orderbook: document.getElementById('orderbook'),
+            askLevels: document.getElementById('askLevels'),
+            bidLevels: document.getElementById('bidLevels')
+        };
+
+        // Error handling
+        function showError(message) {
+            elements.error.textContent = message;
+            elements.error.classList.remove('hidden');
+            elements.loading.classList.add('hidden');
+        }
+
+        // Status updates
+        function updateStatus(status) {
+            elements.simStatus.textContent = status;
+            elements.statusMessage.textContent = `Simulation status: ${status}`;
+        }
+
+        function updateQueueSize() {
+            if (simulation) {
+                elements.queueSize.textContent = simulation.getQueueSize();
+            }
+        }
+
+        // L2 order book callback
+        function onL2Update(event) {
+            console.log('[JavaScript] L2 callback called!', event);
+            console.log('[JavaScript] Symbol:', event.symbol);
+            console.log('[JavaScript] Bids count:', event.bids ? event.bids.length : 'undefined');
+            console.log('[JavaScript] Asks count:', event.asks ? event.asks.length : 'undefined');
+            
+            if (event.bids && event.bids.length > 0) {
+                console.log('[JavaScript] Best bid:', event.bids[0]);
+            }
+            if (event.asks && event.asks.length > 0) {
+                console.log('[JavaScript] Best ask:', event.asks[0]);
+            }
+            
+            updateCount++;
+            elements.updateCount.textContent = updateCount;
+            elements.currentSymbol.textContent = event.symbol;
+
+            // Show order book if hidden
+            if (elements.orderbook.classList.contains('hidden')) {
+                console.log('[JavaScript] Showing order book for first time');
+                elements.noData.classList.add('hidden');
+                elements.orderbook.classList.remove('hidden');
+            }
+
+            // Update asks (reverse order for display)
+            const askHtml = event.asks.slice().reverse().map(level => 
+                `<div class="orderbook-level">
+                    <div class="price">${level.price.toFixed(2)}</div>
+                    <div class="quantity">${level.quantity.toFixed(4)}</div>
+                </div>`
+            ).join('');
+            elements.askLevels.innerHTML = askHtml;
+
+            // Update bids
+            const bidHtml = event.bids.map(level => 
+                `<div class="orderbook-level">
+                    <div class="price">${level.price.toFixed(2)}</div>
+                    <div class="quantity">${level.quantity.toFixed(4)}</div>
+                </div>`
+            ).join('');
+            elements.bidLevels.innerHTML = bidHtml;
+
+            // Update queue size
+            updateQueueSize();
+            
+            console.log('[JavaScript] L2 callback completed, updateCount:', updateCount);
+        }
+
+        // Simulation control functions
+        function initializeSimulation() {
+            console.log('[JavaScript] initializeSimulation called');
+            
+            if (!Module || !Module.ExchangeSimulation) {
+                showError('WebAssembly module not loaded properly');
+                return;
+            }
+
+            try {
+                // Create new simulation instance
+                if (simulation) {
+                    simulation.cleanup();
+                    simulation.delete();
+                }
+
+                console.log('[JavaScript] Creating new ExchangeSimulation instance');
+                simulation = new Module.ExchangeSimulation();
+
+                // Configure simulation with form values
+                const agentCount = parseInt(document.getElementById('agents').value);
+                const symbol = document.getElementById('symbol').value;
+                console.log('[JavaScript] Configuring simulation: agents=' + agentCount + ', symbol=' + symbol);
+                
+                simulation.setAgents(agentCount);
+                simulation.setSymbol(symbol);
+                simulation.setSeed(parseInt(document.getElementById('seed').value));
+                simulation.setSpeedFactor(parseFloat(document.getElementById('speedFactor').value));
+                simulation.setTimeoutDistribution(document.getElementById('timeoutDist').value);
+                simulation.setMedianTimeoutSeconds(parseFloat(document.getElementById('medianTimeout').value));
+                simulation.setSigmaTimeout(parseFloat(document.getElementById('sigmaTimeout').value));
+
+                // Set order size ranges
+                const minSizeMin = parseFloat(document.getElementById('minSizeMin').value);
+                const minSizeMax = parseFloat(document.getElementById('minSizeMax').value);
+                const maxSizeMin = parseFloat(document.getElementById('maxSizeMin').value);
+                const maxSizeMax = parseFloat(document.getElementById('maxSizeMax').value);
+                simulation.setOrderSizeRanges(minSizeMin, minSizeMax, maxSizeMin, maxSizeMax);
+
+                // Set L2 callback
+                console.log('[JavaScript] Setting L2 callback...');
+                simulation.setL2Callback(onL2Update);
+                console.log('[JavaScript] L2 callback set successfully');
+
+                // Initialize
+                console.log('[JavaScript] Calling simulation.initialize()...');
+                const success = simulation.initialize();
+                console.log('[JavaScript] Initialize result:', success);
+                
+                if (!success) {
+                    throw new Error('Failed to initialize simulation');
+                }
+
+                isInitialized = true;
+                updateStatus('Initialized');
+                elements.startBtn.disabled = false;
+                elements.statusMessage.textContent = 'Simulation initialized successfully. Ready to start.';
+                
+                console.log('[JavaScript] Simulation initialized successfully, queue size:', simulation.getQueueSize());
+
+            } catch (error) {
+                console.error('[JavaScript] Initialization error:', error);
+                showError(`Initialization failed: ${error.message}`);
+                isInitialized = false;
+            }
+        }
+
+        function startSimulation() {
+            console.log('[JavaScript] startSimulation called, isInitialized:', isInitialized, 'isRunning:', isRunning);
+            
+            if (!isInitialized || isRunning) return;
+
+            try {
+                updateStatus('Starting...');
+                console.log('[JavaScript] Calling simulation.start()...');
+                const success = simulation.start();
+                console.log('[JavaScript] Start result:', success);
+                
+                if (success) {
+                    isRunning = true;
+                    updateStatus('Running');
+                    elements.startBtn.disabled = true;
+                    elements.stopBtn.disabled = false;
+                    elements.initBtn.disabled = true;
+                    
+                    console.log('[JavaScript] Simulation started, initial queue size:', simulation.getQueueSize());
+                    
+                    // Start monitoring queue size
+                    const monitor = setInterval(() => {
+                        if (!isRunning) {
+                            clearInterval(monitor);
+                            return;
+                        }
+                        const queueSize = simulation.getQueueSize();
+                        updateQueueSize();
+                        
+                        // Log queue size changes
+                        if (queueSize !== lastLoggedQueueSize) {
+                            console.log('[JavaScript] Queue size changed:', queueSize);
+                            lastLoggedQueueSize = queueSize;
+                        }
+                        
+                        if (queueSize === 0) {
+                            // Simulation finished
+                            console.log('[JavaScript] Queue empty, stopping simulation');
+                            stopSimulation();
+                            updateStatus('Completed');
+                            elements.statusMessage.textContent = 'Simulation completed successfully.';
+                        }
+                    }, 100);
+                } else {
+                    throw new Error('Failed to start simulation');
+                }
+            } catch (error) {
+                console.error('[JavaScript] Start error:', error);
+                showError(`Start failed: ${error.message}`);
+                updateStatus('Error');
+            }
+        }
+
+        function stopSimulation() {
+            if (!isRunning) return;
+
+            try {
+                simulation.stop();
+                isRunning = false;
+                updateStatus('Stopped');
+                elements.startBtn.disabled = false;
+                elements.stopBtn.disabled = true;
+                elements.initBtn.disabled = false;
+                elements.statusMessage.textContent = 'Simulation stopped.';
+            } catch (error) {
+                showError(`Stop failed: ${error.message}`);
+            }
+        }
+
+        // Event listeners
+        elements.initBtn.addEventListener('click', initializeSimulation);
+        elements.startBtn.addEventListener('click', startSimulation);
+        elements.stopBtn.addEventListener('click', stopSimulation);
+
+        // Load WebAssembly module
+        function loadModule() {
+            if (typeof ExchangeSimulationModule === 'undefined') {
+                showError('ExchangeSimulationModule not found. Please ensure exchange_simulation.js is loaded.');
+                return;
+            }
+
+            ExchangeSimulationModule().then(module => {
+                Module = module;
+                elements.loading.classList.add('hidden');
+                elements.mainContent.classList.remove('hidden');
+                updateStatus('Ready');
+                console.log('WebAssembly module loaded successfully');
+            }).catch(error => {
+                showError(`Failed to load WebAssembly module: ${error.message}`);
+                console.error('Module loading error:', error);
+            });
+        }
+
+        // Auto-load when page is ready
+        window.addEventListener('load', () => {
+            // Small delay to ensure all scripts are loaded
+            setTimeout(loadModule, 100);
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (simulation) {
+                simulation.cleanup();
+                simulation.delete();
+            }
+        });
+    </script>
+
+    <!-- Load the WebAssembly module -->
+    <script src="exchange_simulation.js"></script>
+</body>
+</html> 
