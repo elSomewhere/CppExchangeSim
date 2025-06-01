@@ -481,6 +481,68 @@
                 </div>
 
                 <div class="controls-section collapsible">
+                    <h3 onclick="toggleSection(this)">🔥 Heatmap Visualization <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
+                            Real-time orderbook depth heatmap visualization with professional trading interface aesthetics.
+                            Configure buffer size, price resolution, and update frequency for optimal performance.
+                        </p>
+                        
+                        <!-- Heatmap Controls -->
+                        <div style="margin-bottom: 15px;">
+                            <button type="button" onclick="openHeatmapWindow()" class="btn btn-primary small">🔥 Open Heatmap</button>
+                            <button type="button" onclick="toggleHeatmapConfig()" class="btn btn-secondary small" id="heatmapConfigBtn">⚙️ Config</button>
+                        </div>
+                        
+                        <!-- Heatmap Configuration -->
+                        <div id="heatmapConfig" class="hidden" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+                            <div style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Buffer Size (snapshots)</label>
+                                <input type="number" id="heatmapBufferSize" min="50" max="1000" value="300" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;">
+                                <small style="color: #718096; font-size: 10px;">Number of historical snapshots to store (50-1000)</small>
+                            </div>
+                            
+                            <div style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Price Levels</label>
+                                <input type="number" id="heatmapPriceLevels" min="50" max="500" value="200" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;" disabled>
+                                <small style="color: #718096; font-size: 10px;">Fixed at construction time (default: 200 levels)</small>
+                            </div>
+                            
+                            <div style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Tick Size ($)</label>
+                                <input type="number" id="heatmapTickSize" min="0.1" max="10" step="0.1" value="1.0" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;" disabled>
+                                <small style="color: #718096; font-size: 10px;">Fixed at construction time (default: $1.0)</small>
+                            </div>
+                            
+                            <div style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 3px; font-size: 12px; font-weight: 500; color: #4a5568;">Update Frequency</label>
+                                <input type="number" id="heatmapUpdateFreq" min="1" max="50" value="5" style="width: 100%; padding: 6px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 12px;">
+                                <small style="color: #718096; font-size: 10px;">Send heatmap data every N L2 updates (1-50)</small>
+                            </div>
+                            
+                            <div>
+                                <label style="display: flex; align-items: center; font-size: 12px; font-weight: 500; color: #4a5568;">
+                                    <input type="checkbox" id="heatmapEnabled" checked style="margin-right: 8px;">
+                                    Enable Heatmap Updates
+                                </label>
+                                <small style="color: #718096; font-size: 10px;">Toggle real-time heatmap data transmission</small>
+                            </div>
+                            
+                            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; padding: 8px; margin-top: 10px; font-size: 10px; color: #8b7d00;">
+                                <strong>Note:</strong> Price levels and tick size are configured during WebAssembly initialization and cannot be changed dynamically.
+                            </div>
+                        </div>
+                        
+                        <!-- Heatmap Status -->
+                        <div style="background: #edf2f7; padding: 8px; border-radius: 4px; font-size: 11px; color: #4a5568;">
+                            <div>Status: <span id="heatmapStatus">Ready</span></div>
+                            <div>Window: <span id="heatmapWindowStatus">Closed</span></div>
+                            <div>Updates: <span id="heatmapUpdateCount">0</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls-section collapsible">
                     <h3 onclick="toggleSection(this)">⏱️ Order Timeouts <span class="toggle-icon">▼</span></h3>
                     <div class="section-content">
                         <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
@@ -1022,7 +1084,119 @@
             // Update queue size
             updateQueueSize();
             
+            // Send to heatmap window if open
+            if (heatmapWindow && !heatmapWindow.closed) {
+                try {
+                    heatmapWindow.onL2Update(event);
+                } catch (e) {
+                    console.log('[JavaScript] Heatmap window not ready or closed');
+                }
+            }
+            
             console.log('[JavaScript] L2 callback completed, updateCount:', updateCount);
+        }
+
+        // Heatmap callback
+        function onHeatmapUpdate(heatmapData) {
+            console.log('[JavaScript] Heatmap callback called!', heatmapData);
+            
+            // Update status
+            const heatmapUpdateCount = document.getElementById('heatmapUpdateCount');
+            if (heatmapUpdateCount) {
+                heatmapUpdateCount.textContent = parseInt(heatmapUpdateCount.textContent) + 1;
+            }
+            
+            // Send to heatmap window if open
+            if (heatmapWindow && !heatmapWindow.closed) {
+                try {
+                    heatmapWindow.onHeatmapUpdate(heatmapData);
+                } catch (e) {
+                    console.log('[JavaScript] Heatmap window not ready or closed');
+                }
+            }
+        }
+
+        // Heatmap window management
+        let heatmapWindow = null;
+        
+        function openHeatmapWindow() {
+            if (heatmapWindow && !heatmapWindow.closed) {
+                heatmapWindow.focus();
+                return;
+            }
+            
+            const width = 1400;
+            const height = 900;
+            const left = (screen.width - width) / 2;
+            const top = (screen.height - height) / 2;
+            
+            heatmapWindow = window.open(
+                'heatmap.html',
+                'OrderbookHeatmap',
+                `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no,menubar=no,toolbar=no`
+            );
+            
+            if (heatmapWindow) {
+                console.log('[JavaScript] Heatmap window opened');
+                
+                // Check when window is ready and set up communication
+                const checkReady = setInterval(() => {
+                    try {
+                        if (heatmapWindow.heatmapViz) {
+                            console.log('[JavaScript] Heatmap window ready for communication');
+                            clearInterval(checkReady);
+                        }
+                    } catch (e) {
+                        // Window not ready yet
+                    }
+                }, 100);
+                
+                // Clean up interval after 10 seconds
+                setTimeout(() => clearInterval(checkReady), 10000);
+            } else {
+                alert('Please allow popups for this site to open the heatmap visualization.');
+            }
+        }
+
+        // Heatmap configuration functions
+        function toggleHeatmapConfig() {
+            const configPanel = document.getElementById('heatmapConfig');
+            const configBtn = document.getElementById('heatmapConfigBtn');
+            
+            if (configPanel && configBtn) {
+                configPanel.classList.toggle('hidden');
+                configBtn.textContent = configPanel.classList.contains('hidden') ? '⚙️ Config' : '⚙️ Close';
+            }
+        }
+        
+        function updateHeatmapStatus(status) {
+            const statusElement = document.getElementById('heatmapStatus');
+            if (statusElement) {
+                statusElement.textContent = status;
+            }
+        }
+        
+        function updateHeatmapWindowStatus() {
+            const statusElement = document.getElementById('heatmapWindowStatus');
+            if (statusElement) {
+                if (heatmapWindow && !heatmapWindow.closed) {
+                    statusElement.textContent = 'Open';
+                    statusElement.style.color = '#38a169'; // Green
+                } else {
+                    statusElement.textContent = 'Closed';
+                    statusElement.style.color = '#e53e3e'; // Red
+                }
+            }
+        }
+        
+        function getHeatmapConfig() {
+            return {
+                bufferSize: parseInt(document.getElementById('heatmapBufferSize')?.value || 300),
+                priceLevels: parseInt(document.getElementById('heatmapPriceLevels')?.value || 200),
+                tickSize: parseFloat(document.getElementById('heatmapTickSize')?.value || 1.0),
+                updateFreq: parseInt(document.getElementById('heatmapUpdateFreq')?.value || 5),
+                enabled: document.getElementById('heatmapEnabled')?.checked || true
+            };
         }
 
         // Simulation control functions
@@ -1114,6 +1288,34 @@
                 console.log('[JavaScript] Setting L2 callback...');
                 simulation.setL2Callback(onL2Update);
                 console.log('[JavaScript] L2 callback set successfully');
+
+                // Set heatmap callback
+                console.log('[JavaScript] Setting heatmap callback...');
+                simulation.setHeatmapCallback(onHeatmapUpdate);
+                console.log('[JavaScript] Heatmap callback set successfully');
+                
+                // Configure heatmap parameters
+                const heatmapConfig = getHeatmapConfig();
+                console.log('[JavaScript] Configuring heatmap with settings:', heatmapConfig);
+                
+                try {
+                    if (simulation.setHeatmapBufferSize) {
+                        simulation.setHeatmapBufferSize(heatmapConfig.bufferSize);
+                    }
+                    if (simulation.setHeatmapFrequency) {
+                        simulation.setHeatmapFrequency(heatmapConfig.updateFreq);
+                    }
+                    if (simulation.setHeatmapUpdates) {
+                        simulation.setHeatmapUpdates(heatmapConfig.enabled);
+                    }
+                    
+                    updateHeatmapStatus('Configured');
+                    console.log('[JavaScript] Heatmap configuration applied successfully');
+                    console.log('[JavaScript] Note: Price levels and tick size are fixed at construction time');
+                } catch (error) {
+                    console.warn('[JavaScript] Heatmap configuration error:', error);
+                    updateHeatmapStatus('Config Error');
+                }
 
                 // Initialize
                 console.log('[JavaScript] Calling simulation.initialize()...');
@@ -1212,6 +1414,11 @@
         elements.startBtn.addEventListener('click', startSimulation);
         elements.stopBtn.addEventListener('click', stopSimulation);
         elements.addSpreadProfile.addEventListener('click', () => createSpreadProfile());
+
+        // Heatmap status monitoring
+        setInterval(() => {
+            updateHeatmapWindowStatus();
+        }, 1000);
 
         // Load WebAssembly module
         function loadModule() {

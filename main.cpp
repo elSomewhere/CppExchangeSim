@@ -1,4 +1,4 @@
-// main.cpp – beta‑skewed spread sampling version
+// main.cpp – beta‑skewed spread sampling version with heatmap support
 // -----------------------------------------------------------------------------
 // Build notes
 //   * No other source files changed – only this unit introduces the new helper
@@ -23,7 +23,7 @@
 #include "src/TradingSimulation.h"
 #include "ZeroIntelligenceMarketMaker.h"
 #include "src/RealTimeBus.h"
-#include "L2PrinterHook.h"
+#include "L2HeatmapHook.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1.  Beta‑distribution helpers (self‑contained here for simplicity)
@@ -248,35 +248,27 @@ int main()
 
     std::default_random_engine main_rng(seed);
 
-    // --- MODIFIED: Create and use L2PrinterHook ---
-    // The existing EventPrinterHook in TradingSimulation.h might still be useful
-    // for generic event logging. If L2PrinterHook is *the only* pre-publish hook desired
-    // for L2 printing, we can pass nullptr to TradingSimulation for its internal hook.
-    // For this example, let's assume TradingSimulation's default hook creation is fine,
-    // and we add L2PrinterHook *in addition*.
-    // If you want L2PrinterHook to *replace* the one in TradingSimulation that handles L2,
-    // you'd pass a non-L2-printing hook (or nullptr if TradingSimulation handles it)
-    // to TradingSimulation's constructor, then register L2PrinterHook separately.
+    // --- MODIFIED: Create and use L2HeatmapHook instead of L2PrinterHook ---
+    // Configure heatmap parameters
+    size_t heatmap_buffer_size = 300;        // Store last 300 snapshots
+    int heatmap_price_levels = 200;          // 200 price levels around mid
+    double heatmap_tick_size = 1.0;          // $1 tick size
+    bool enable_console_output = false;      // Disable console spam
+    bool enable_l2_updates = true;           // Enable L2 orderbook updates
+    bool enable_heatmap_updates = true;      // Enable heatmap updates
+    size_t heatmap_update_frequency = 5;     // Send heatmap every 5 L2 updates
 
-    // Let's instantiate our L2PrinterHook
-    auto l2_printer_hook = std::make_unique<L2PrinterHook>();
+    auto l2_heatmap_hook = std::make_unique<L2HeatmapHook>(
+        heatmap_buffer_size, heatmap_price_levels, heatmap_tick_size,
+        enable_console_output, enable_l2_updates, enable_heatmap_updates, 
+        heatmap_update_frequency
+    );
 
     // TradingSimulation will still create its own EventPrinterHook.
-    // We can then register our L2PrinterHook in addition if we want both.
-    // Or, if TradingSimulation's printer_hook parameter is intended to be the *sole*
-    // pre-publish hook, we would pass this one in.
-    // The current TradingSimulation takes a `unique_ptr<EventPrinterHook>`, which is a specific type.
-    // To use L2PrinterHook, we would need to:
-    // 1. Modify TradingSimulation to accept IPrePublishHook
-    // OR
-    // 2. Register L2PrinterHook directly with the bus after TradingSimulation is created.
-
-    // Option 2: Register L2PrinterHook directly with the bus.
-    // This assumes TradingSimulation is constructed with its default EventPrinterHook or a custom one.
+    // We register our L2HeatmapHook in addition to handle L2 events.
     TradingSimulation sim(symbol, seed); // Uses its default internal EventPrinterHook
-    sim.get_event_bus().register_pre_publish_hook(l2_printer_hook.get()); // Register our L2 hook
+    sim.get_event_bus().register_pre_publish_hook(l2_heatmap_hook.get()); // Register our L2 heatmap hook
     // --- END MODIFIED ---
-
 
     RealTimeBus rtb(sim.get_event_bus());
 
@@ -327,7 +319,10 @@ int main()
         }
     }
 
-    std::cout << "Starting RealTimeBus processing…" << std::endl;
+    std::cout << "Starting RealTimeBus processing with heatmap visualization…" << std::endl;
+    std::cout << "Heatmap configured: " << heatmap_buffer_size << " snapshots, " 
+              << heatmap_price_levels << " price levels, $" << heatmap_tick_size << " tick size" << std::endl;
+    
     auto wall_start = std::chrono::steady_clock::now();
     EventBusSystem::Timestamp sim_start_ts = sim.get_event_bus().get_current_time();
 
@@ -343,9 +338,11 @@ int main()
     std::cout << "Simulated time elapsed: " << ModelEvents::duration_to_float_seconds(sim_elapsed)
               << " s" << std::endl;
     std::cout << "Final queue size: " << sim.get_event_bus().get_event_queue_size() << std::endl;
+    std::cout << "Heatmap buffer usage: " << l2_heatmap_hook->get_current_buffer_usage() 
+              << "/" << l2_heatmap_hook->get_buffer_size() << " snapshots" << std::endl;
 
     // Deregister the hook (good practice, though unique_ptr would manage lifetime if owned by sim)
-    sim.get_event_bus().deregister_pre_publish_hook(l2_printer_hook.get());
+    sim.get_event_bus().deregister_pre_publish_hook(l2_heatmap_hook.get());
 
     return 0;
 }

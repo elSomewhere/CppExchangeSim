@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Orderbook Heatmap | Trading Simulation</title>
+    
+    <style>
+        /* Ikeda-inspired stark aesthetic */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000000;
+            color: #ffffff;
+            overflow: hidden;
+            user-select: none;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #header {
+            height: 60px;
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            flex-shrink: 0;
+        }
+        
+        #title {
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        #controls {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn {
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #ffffff;
+            padding: 8px 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.1s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn:hover {
+            background: #ffffff;
+            color: #000000;
+        }
+        
+        .btn.active {
+            background: #ffffff;
+            color: #000000;
+        }
+        
+        #canvasContainer {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #heatmapCanvas {
+            display: block;
+            background: #000000;
+        }
+        
+        #status {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border: 1px solid #333333;
+            font-size: 10px;
+            min-width: 200px;
+        }
+        
+        #status .row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        
+        #status .label {
+            color: #888888;
+        }
+        
+        #status .value {
+            color: #ffffff;
+            font-weight: bold;
+        }
+        
+        #configPanel {
+            position: absolute;
+            top: 70px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 1px solid #ffffff;
+            padding: 20px;
+            width: 300px;
+            font-size: 11px;
+        }
+        
+        #configPanel.hidden {
+            display: none;
+        }
+        
+        #configPanel h3 {
+            margin-bottom: 15px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .config-group {
+            margin-bottom: 15px;
+        }
+        
+        .config-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #cccccc;
+        }
+        
+        .config-group input[type="number"],
+        .config-group input[type="range"] {
+            width: 100%;
+            background: #000000;
+            border: 1px solid #666666;
+            color: #ffffff;
+            padding: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+        }
+        
+        .config-group input[type="range"] {
+            height: 20px;
+        }
+        
+        .range-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: #888888;
+            margin-top: 2px;
+        }
+        
+        #loading, #error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        #loading.hidden, #error.hidden {
+            display: none;
+        }
+        
+        #error {
+            color: #ff4444;
+        }
+        
+        .key-hint {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 9px;
+            color: #666666;
+            line-height: 1.3;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="header">
+            <div id="title">REAL-TIME ORDERBOOK HEATMAP</div>
+            <div id="controls">
+                <button id="playPauseBtn" class="btn">PAUSE</button>
+                <button id="configBtn" class="btn">CONFIG</button>
+                <button id="resetBtn" class="btn">RESET</button>
+                <button id="fullscreenBtn" class="btn">FULLSCREEN</button>
+            </div>
+        </div>
+        
+        <div id="canvasContainer">
+            <canvas id="heatmapCanvas"></canvas>
+            
+            <!-- Status Panel -->
+            <div id="status">
+                <div class="row">
+                    <span class="label">Symbol:</span>
+                    <span class="value" id="symbolValue">BTC/USD</span>
+                </div>
+                <div class="row">
+                    <span class="label">Updates:</span>
+                    <span class="value" id="updateCount">0</span>
+                </div>
+                <div class="row">
+                    <span class="label">Mid Price:</span>
+                    <span class="value" id="midPrice">0.00</span>
+                </div>
+                <div class="row">
+                    <span class="label">Spread:</span>
+                    <span class="value" id="spread">0.00</span>
+                </div>
+                <div class="row">
+                    <span class="label">Buffer:</span>
+                    <span class="value"><span id="bufferUsage">0</span>/<span id="bufferSize">300</span></span>
+                </div>
+                <div class="row">
+                    <span class="label">Levels:</span>
+                    <span class="value" id="priceLevels">200</span>
+                </div>
+                <div class="row">
+                    <span class="label">Tick Size:</span>
+                    <span class="value" id="tickSize">1.0</span>
+                </div>
+            </div>
+            
+            <!-- Configuration Panel -->
+            <div id="configPanel" class="hidden">
+                <h3>Heatmap Configuration</h3>
+                
+                <div class="config-group">
+                    <label>Buffer Size (snapshots):</label>
+                    <input type="number" id="bufferSizeInput" min="50" max="1000" value="300" disabled>
+                    <small style="color: #888; font-size: 9px;">WebAssembly configured</small>
+                </div>
+                
+                <div class="config-group">
+                    <label>Price Levels:</label>
+                    <input type="number" id="priceLevelsInput" min="50" max="500" value="200" disabled>
+                    <small style="color: #888; font-size: 9px;">WebAssembly configured</small>
+                </div>
+                
+                <div class="config-group">
+                    <label>Tick Size ($):</label>
+                    <input type="number" id="tickSizeInput" min="0.1" max="10.0" step="0.1" value="1.0" disabled>
+                    <small style="color: #888; font-size: 9px;">WebAssembly configured</small>
+                </div>
+                
+                <div class="config-group">
+                    <label>Update Frequency:</label>
+                    <input type="number" id="updateFreqInput" min="1" max="50" value="5">
+                    <small style="color: #888; font-size: 9px;">Updates per heatmap refresh</small>
+                </div>
+                
+                <div class="config-group">
+                    <label>Visual Intensity:</label>
+                    <input type="range" id="intensitySlider" min="1" max="10" value="3">
+                    <div class="range-labels">
+                        <span>Subtle</span>
+                        <span>Stark</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Loading Overlay -->
+            <div id="loading">
+                <div>Loading heatmap visualization...</div>
+                <div style="font-size: 10px; margin-top: 10px; color: #888888;">
+                    Waiting for market data
+                </div>
+            </div>
+            
+            <!-- Error Overlay -->
+            <div id="error" class="hidden">
+                <div>Visualization Error</div>
+                <div id="errorMessage" style="font-size: 10px; margin-top: 10px;"></div>
+            </div>
+            
+            <!-- Keyboard Shortcuts -->
+            <div class="key-hint">
+                SPACE: Play/Pause | R: Reset | C: Config | F: Fullscreen
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class OrderbookHeatmap {
+            constructor() {
+                this.canvas = document.getElementById('heatmapCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                // State
+                this.isPlaying = true;
+                this.updateCount = 0;
+                this.lastMidPrice = 50000;
+                this.lastSpread = 5;
+                this.heatmapData = null;
+                
+                // Configuration
+                this.config = {
+                    bufferSize: 300,
+                    priceLevels: 200,
+                    tickSize: 1.0,
+                    updateFreq: 5,
+                    intensity: 3
+                };
+                
+                // Visual parameters
+                this.cellWidth = 4;
+                this.cellHeight = 3;
+                this.leftMargin = 80;
+                this.topMargin = 50;
+                
+                // Data buffer (for when WebAssembly isn't available, we'll use synthetic data)
+                this.dataBuffer = [];
+                this.maxBufferSize = 300;
+                
+                this.initializeElements();
+                this.setupEventListeners();
+                this.setupCanvas();
+                
+                // Start with synthetic data if no WebAssembly
+                if (!this.isWebAssemblyAvailable()) {
+                    console.log('[Heatmap] WebAssembly not available, using synthetic data');
+                    this.startSyntheticData();
+                }
+            }
+            
+            initializeElements() {
+                this.elements = {
+                    playPauseBtn: document.getElementById('playPauseBtn'),
+                    configBtn: document.getElementById('configBtn'),
+                    resetBtn: document.getElementById('resetBtn'),
+                    fullscreenBtn: document.getElementById('fullscreenBtn'),
+                    configPanel: document.getElementById('configPanel'),
+                    loading: document.getElementById('loading'),
+                    error: document.getElementById('error'),
+                    errorMessage: document.getElementById('errorMessage'),
+                    
+                    // Status elements
+                    symbolValue: document.getElementById('symbolValue'),
+                    updateCount: document.getElementById('updateCount'),
+                    midPrice: document.getElementById('midPrice'),
+                    spread: document.getElementById('spread'),
+                    bufferUsage: document.getElementById('bufferUsage'),
+                    bufferSize: document.getElementById('bufferSize'),
+                    priceLevels: document.getElementById('priceLevels'),
+                    tickSize: document.getElementById('tickSize'),
+                    
+                    // Config inputs
+                    bufferSizeInput: document.getElementById('bufferSizeInput'),
+                    priceLevelsInput: document.getElementById('priceLevelsInput'),
+                    tickSizeInput: document.getElementById('tickSizeInput'),
+                    updateFreqInput: document.getElementById('updateFreqInput'),
+                    intensitySlider: document.getElementById('intensitySlider')
+                };
+                
+                // Initialize display values
+                this.updateStatusDisplay();
+            }
+            
+            setupEventListeners() {
+                this.elements.playPauseBtn.addEventListener('click', () => this.togglePlayPause());
+                this.elements.configBtn.addEventListener('click', () => this.toggleConfig());
+                this.elements.resetBtn.addEventListener('click', () => this.reset());
+                this.elements.fullscreenBtn.addEventListener('click', () => this.toggleFullscreen());
+                
+                // Config inputs
+                this.elements.bufferSizeInput.addEventListener('change', (e) => {
+                    this.config.bufferSize = parseInt(e.target.value);
+                    this.updateStatusDisplay();
+                });
+                
+                this.elements.priceLevelsInput.addEventListener('change', (e) => {
+                    this.config.priceLevels = parseInt(e.target.value);
+                    this.updateStatusDisplay();
+                });
+                
+                this.elements.tickSizeInput.addEventListener('change', (e) => {
+                    this.config.tickSize = parseFloat(e.target.value);
+                    this.updateStatusDisplay();
+                });
+                
+                this.elements.updateFreqInput.addEventListener('change', (e) => {
+                    this.config.updateFreq = parseInt(e.target.value);
+                });
+                
+                this.elements.intensitySlider.addEventListener('input', (e) => {
+                    this.config.intensity = parseInt(e.target.value);
+                });
+                
+                // Window resize
+                window.addEventListener('resize', () => this.handleResize());
+                
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    switch(e.code) {
+                        case 'Space':
+                            e.preventDefault();
+                            this.togglePlayPause();
+                            break;
+                        case 'KeyR':
+                            this.reset();
+                            break;
+                        case 'KeyC':
+                            this.toggleConfig();
+                            break;
+                        case 'KeyF':
+                            this.toggleFullscreen();
+                            break;
+                    }
+                });
+            }
+            
+            setupCanvas() {
+                this.handleResize();
+                this.clearCanvas();
+            }
+            
+            handleResize() {
+                const container = this.canvas.parentElement;
+                const rect = container.getBoundingClientRect();
+                
+                this.canvas.width = Math.max(800, rect.width - 40);
+                this.canvas.height = Math.max(500, rect.height - 40);
+                
+                // Recalculate cell dimensions
+                const availableWidth = this.canvas.width - this.leftMargin - 20;
+                const availableHeight = this.canvas.height - this.topMargin - 20;
+                
+                this.cellWidth = Math.max(2, Math.floor(availableWidth / this.config.bufferSize));
+                this.cellHeight = Math.max(2, Math.floor(availableHeight / this.config.priceLevels));
+                
+                this.redraw();
+            }
+            
+            clearCanvas() {
+                this.ctx.fillStyle = '#000000';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            // WebAssembly integration
+            isWebAssemblyAvailable() {
+                return typeof Module !== 'undefined' && Module.L2HeatmapHook;
+            }
+            
+            onL2Update(event) {
+                if (!this.isPlaying) return;
+                
+                console.log('[Heatmap] L2 update received:', event);
+                this.updateCount++;
+                this.elements.updateCount.textContent = this.updateCount;
+                this.elements.symbolValue.textContent = event.symbol || 'BTC/USD';
+                
+                // Calculate mid price and spread
+                if (event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0) {
+                    this.lastMidPrice = (event.bids[0].price + event.asks[0].price) / 2;
+                    this.lastSpread = event.asks[0].price - event.bids[0].price;
+                    
+                    this.elements.midPrice.textContent = this.lastMidPrice.toFixed(2);
+                    this.elements.spread.textContent = this.lastSpread.toFixed(2);
+                }
+                
+                // Hide loading overlay
+                if (!this.elements.loading.classList.contains('hidden')) {
+                    this.elements.loading.classList.add('hidden');
+                }
+            }
+            
+            onHeatmapUpdate(heatmapData) {
+                if (!this.isPlaying) return;
+                
+                console.log('[Heatmap] Heatmap data received:', heatmapData);
+                
+                // Add new data to buffer
+                this.addToDataBuffer(heatmapData);
+                
+                // Update buffer info
+                this.elements.bufferUsage.textContent = this.dataBuffer.length;
+                this.elements.bufferSize.textContent = heatmapData.bufferSize || this.config.bufferSize;
+                this.elements.priceLevels.textContent = heatmapData.numLevels || this.config.priceLevels;
+                this.elements.tickSize.textContent = (heatmapData.tickSize || this.config.tickSize).toFixed(1);
+                
+                this.renderTimeSeriesHeatmap();
+            }
+            
+            addToDataBuffer(heatmapData) {
+                // Add new data to buffer
+                this.dataBuffer.push({
+                    bidVolumes: [...heatmapData.bidVolumes],
+                    askVolumes: [...heatmapData.askVolumes],
+                    midPrice: heatmapData.midPrice,
+                    timestamp: heatmapData.timestamp || Date.now(),
+                    stats: heatmapData.stats
+                });
+                
+                // Remove oldest data if buffer is full
+                if (this.dataBuffer.length > this.maxBufferSize) {
+                    this.dataBuffer.shift();
+                }
+                
+                // Store latest metadata for overlays
+                this.heatmapData = heatmapData;
+            }
+            
+            renderTimeSeriesHeatmap() {
+                this.clearCanvas();
+                
+                if (this.dataBuffer.length === 0) {
+                    console.log('[Heatmap] No data in buffer to render');
+                    return;
+                }
+                
+                // Calculate dimensions
+                const availableWidth = this.canvas.width - this.leftMargin - 20;
+                const availableHeight = this.canvas.height - this.topMargin - 20;
+                const maxCols = Math.floor(availableWidth / this.cellWidth);
+                
+                // Determine how many time points to render
+                const numTimePoints = Math.min(this.dataBuffer.length, maxCols);
+                const startIndex = Math.max(0, this.dataBuffer.length - numTimePoints);
+                
+                // Calculate volume normalization across all visible time points
+                const { maxVolume, stats } = this.calculateGlobalVolumeStats(startIndex, numTimePoints);
+                
+                if (maxVolume === 0) {
+                    console.log('[Heatmap] No volume data to render');
+                    return;
+                }
+                
+                // Render each time point as a column
+                for (let timeIndex = 0; timeIndex < numTimePoints; timeIndex++) {
+                    const dataIndex = startIndex + timeIndex;
+                    const data = this.dataBuffer[dataIndex];
+                    
+                    const x = this.leftMargin + timeIndex * this.cellWidth;
+                    this.renderColumn(x, data, maxVolume);
+                }
+                
+                // Draw overlays using the latest data
+                if (this.heatmapData) {
+                    this.drawPriceLabels(this.heatmapData);
+                    this.drawMidPriceLine(this.heatmapData);
+                    this.drawTimeAxis(numTimePoints);
+                }
+            }
+            
+            renderColumn(x, data, maxVolume) {
+                const { bidVolumes, askVolumes } = data;
+                const numLevels = Math.min(bidVolumes.length, askVolumes.length);
+                
+                for (let level = 0; level < numLevels; level++) {
+                    const y = this.topMargin + level * this.cellHeight;
+                    
+                    // Render bid volume (left side of cell)
+                    if (level < bidVolumes.length && bidVolumes[level] > 0) {
+                        const intensity = bidVolumes[level] / maxVolume;
+                        const color = this.getIntensityColor(intensity, 'bid');
+                        this.ctx.fillStyle = color;
+                        this.ctx.fillRect(x, y, this.cellWidth / 2, this.cellHeight);
+                    }
+                    
+                    // Render ask volume (right side of cell)
+                    if (level < askVolumes.length && askVolumes[level] > 0) {
+                        const intensity = askVolumes[level] / maxVolume;
+                        const color = this.getIntensityColor(intensity, 'ask');
+                        this.ctx.fillStyle = color;
+                        this.ctx.fillRect(x + this.cellWidth / 2, y, this.cellWidth / 2, this.cellHeight);
+                    }
+                }
+            }
+            
+            calculateGlobalVolumeStats(startIndex, numTimePoints) {
+                let maxBidVolume = 0;
+                let maxAskVolume = 0;
+                let allBidVolumes = [];
+                let allAskVolumes = [];
+                
+                for (let i = 0; i < numTimePoints; i++) {
+                    const data = this.dataBuffer[startIndex + i];
+                    
+                    for (let level = 0; level < data.bidVolumes.length; level++) {
+                        const bidVol = data.bidVolumes[level];
+                        const askVol = data.askVolumes[level];
+                        
+                        if (bidVol > 0) {
+                            allBidVolumes.push(bidVol);
+                            maxBidVolume = Math.max(maxBidVolume, bidVol);
+                        }
+                        
+                        if (askVol > 0) {
+                            allAskVolumes.push(askVol);
+                            maxAskVolume = Math.max(maxAskVolume, askVol);
+                        }
+                    }
+                }
+                
+                // Use 95th percentile for outlier-resistant scaling
+                allBidVolumes.sort((a, b) => a - b);
+                allAskVolumes.sort((a, b) => a - b);
+                
+                const p95BidVolume = allBidVolumes.length > 0 ? 
+                    allBidVolumes[Math.floor(allBidVolumes.length * 0.95)] : 0;
+                const p95AskVolume = allAskVolumes.length > 0 ? 
+                    allAskVolumes[Math.floor(allAskVolumes.length * 0.95)] : 0;
+                
+                const maxVolume = Math.max(p95BidVolume, p95AskVolume);
+                
+                return {
+                    maxVolume,
+                    stats: {
+                        maxBidVolume,
+                        maxAskVolume,
+                        p95BidVolume,
+                        p95AskVolume
+                    }
+                };
+            }
+            
+            drawTimeAxis(numTimePoints) {
+                // Draw time indicators for key columns
+                const step = Math.max(1, Math.floor(numTimePoints / 10)); // Show ~10 time markers
+                
+                this.ctx.strokeStyle = '#333333';
+                this.ctx.lineWidth = 1;
+                this.ctx.font = '8px Courier New';
+                this.ctx.fillStyle = '#888888';
+                this.ctx.textAlign = 'center';
+                
+                for (let i = 0; i < numTimePoints; i += step) {
+                    const x = this.leftMargin + i * this.cellWidth + this.cellWidth / 2;
+                    const y1 = this.topMargin - 5;
+                    const y2 = this.topMargin + this.config.priceLevels * this.cellHeight + 5;
+                    
+                    // Draw tick mark
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y1);
+                    this.ctx.lineTo(x, y1 + 3);
+                    this.ctx.moveTo(x, y2 - 3);
+                    this.ctx.lineTo(x, y2);
+                    this.ctx.stroke();
+                    
+                    // Draw time label (relative time from start)
+                    const timeLabel = `T-${numTimePoints - i - 1}`;
+                    this.ctx.fillText(timeLabel, x, y1 - 2);
+                }
+                
+                // Highlight the most recent column (rightmost)
+                if (numTimePoints > 0) {
+                    const x = this.leftMargin + (numTimePoints - 1) * this.cellWidth + this.cellWidth / 2;
+                    const y1 = this.topMargin - 10;
+                    const y2 = this.topMargin + this.config.priceLevels * this.cellHeight + 10;
+                    
+                    this.ctx.strokeStyle = '#ffffff';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, y1);
+                    this.ctx.lineTo(x, y2);
+                    this.ctx.stroke();
+                    
+                    // Label current time
+                    this.ctx.fillStyle = '#ffffff';
+                    this.ctx.fillText('NOW', x, y1 - 2);
+                }
+            }
+
+            renderHeatmap(data) {
+                // Legacy method - redirect to new implementation
+                this.addToDataBuffer(data);
+                this.renderTimeSeriesHeatmap();
+            }
+            
+            getIntensityColor(intensity, side) {
+                // Ikeda-style stark color mapping
+                const adjustedIntensity = Math.pow(intensity, 1 / this.config.intensity) * this.config.intensity;
+                
+                if (adjustedIntensity < 0.1) {
+                    return '#000000';
+                } else if (adjustedIntensity < 0.3) {
+                    return '#1a1a1a';
+                } else if (adjustedIntensity < 0.6) {
+                    return '#4a4a4a';
+                } else if (adjustedIntensity < 0.8) {
+                    return '#8a8a8a';
+                } else {
+                    return '#ffffff';
+                }
+            }
+            
+            drawPriceLabels(data) {
+                if (!data.priceLabels || !data.midPrice) return;
+                
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.font = '8px Courier New';
+                this.ctx.textAlign = 'right';
+                
+                const midLevel = Math.floor(data.numLevels / 2);
+                const labelStep = Math.max(1, Math.floor(data.numLevels / 20)); // Show ~20 labels max
+                
+                for (let level = 0; level < data.numLevels; level += labelStep) {
+                    if (level < data.priceLabels.length) {
+                        const price = data.priceLabels[level];
+                        const y = this.topMargin + level * this.cellHeight + this.cellHeight / 2;
+                        
+                        // Highlight levels near mid price
+                        if (Math.abs(level - midLevel) < 3) {
+                            this.ctx.fillStyle = '#ffff00'; // Yellow for mid price area
+                        } else {
+                            this.ctx.fillStyle = '#ffffff';
+                        }
+                        
+                        this.ctx.fillText(price.toFixed(2), this.leftMargin - 5, y + 2);
+                    }
+                }
+            }
+            
+            drawMidPriceLine(data) {
+                if (!data.midPrice || !data.basePrice || !data.tickSize) return;
+                
+                const midLevel = Math.floor(data.numLevels / 2);
+                const y = this.topMargin + midLevel * this.cellHeight + this.cellHeight / 2;
+                
+                this.ctx.strokeStyle = '#ffff00';
+                this.ctx.lineWidth = 1;
+                this.ctx.setLineDash([2, 2]);
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.leftMargin, y);
+                this.ctx.lineTo(this.canvas.width - 20, y);
+                this.ctx.stroke();
+                
+                this.ctx.setLineDash([]);
+            }
+            
+            // Synthetic data generation for testing
+            startSyntheticData() {
+                console.log('[Heatmap] Starting synthetic data generation');
+                
+                let counter = 0;
+                const interval = setInterval(() => {
+                    if (!this.isPlaying) return;
+                    
+                    // Generate synthetic L2 data
+                    const l2Data = this.generateSyntheticL2Data();
+                    this.onL2Update(l2Data);
+                    
+                    // Generate synthetic heatmap data every few updates
+                    if (counter % this.config.updateFreq === 0) {
+                        const heatmapData = this.generateSyntheticHeatmapData();
+                        this.onHeatmapUpdate(heatmapData);
+                    }
+                    
+                    counter++;
+                }, 100); // Update every 100ms
+                
+                this.syntheticInterval = interval;
+            }
+            
+            generateSyntheticL2Data() {
+                const basePrice = 50000;
+                const spread = 5 + Math.random() * 10;
+                const midPrice = basePrice + (Math.random() - 0.5) * 100;
+                
+                const bestBid = midPrice - spread / 2;
+                const bestAsk = midPrice + spread / 2;
+                
+                const bids = [];
+                const asks = [];
+                
+                for (let i = 0; i < 10; i++) {
+                    bids.push({
+                        price: bestBid - i * (1 + Math.random()),
+                        quantity: Math.random() * 5 + 0.1
+                    });
+                    
+                    asks.push({
+                        price: bestAsk + i * (1 + Math.random()),
+                        quantity: Math.random() * 5 + 0.1
+                    });
+                }
+                
+                return {
+                    symbol: 'BTC/USD',
+                    bids: bids,
+                    asks: asks,
+                    timestamp: Date.now()
+                };
+            }
+            
+            generateSyntheticHeatmapData() {
+                const numLevels = this.config.priceLevels;
+                const bidVolumes = new Array(numLevels);
+                const askVolumes = new Array(numLevels);
+                const priceLabels = new Array(numLevels);
+                
+                const basePrice = 50000 + (Math.sin(Date.now() * 0.0001) * 500); // Slowly varying base price
+                const midLevel = Math.floor(numLevels / 2);
+                
+                // Create more dynamic volume patterns that change over time
+                const timePhase = Date.now() * 0.001;
+                const marketCycle = Math.sin(timePhase * 0.1); // Slow market cycle
+                const volatilityPhase = Math.sin(timePhase * 0.3); // Medium volatility
+                
+                for (let level = 0; level < numLevels; level++) {
+                    const distanceFromMid = Math.abs(level - midLevel);
+                    const normDistance = distanceFromMid / (numLevels / 2);
+                    
+                    // Base volume decays exponentially from mid price
+                    const baseVolume = Math.exp(-distanceFromMid * 0.1) * 15;
+                    
+                    // Add time-varying patterns
+                    const cyclePattern = 1 + 0.5 * Math.sin(timePhase + level * 0.1);
+                    const volatilityBoost = 1 + 0.3 * Math.abs(volatilityPhase) * Math.exp(-normDistance * 2);
+                    const randomNoise = 0.7 + 0.6 * Math.random();
+                    
+                    // Market imbalance effect
+                    const imbalance = marketCycle * 0.3;
+                    const bidBoost = level < midLevel ? (1 + Math.max(0, imbalance)) : (1 + Math.max(0, -imbalance));
+                    const askBoost = level > midLevel ? (1 + Math.max(0, -imbalance)) : (1 + Math.max(0, imbalance));
+                    
+                    // Generate volumes with realistic patterns
+                    bidVolumes[level] = level <= midLevel ? 
+                        baseVolume * cyclePattern * volatilityBoost * bidBoost * randomNoise : 0;
+                    askVolumes[level] = level >= midLevel ? 
+                        baseVolume * cyclePattern * volatilityBoost * askBoost * randomNoise : 0;
+                    
+                    // Ensure mid level has both bid and ask activity
+                    if (level === midLevel) {
+                        bidVolumes[level] *= 0.3;
+                        askVolumes[level] *= 0.3;
+                    }
+                    
+                    priceLabels[level] = basePrice + (level - midLevel) * this.config.tickSize;
+                }
+                
+                // Add occasional volume spikes to simulate large orders
+                if (Math.random() < 0.1) { // 10% chance of spike
+                    const spikeLevel = Math.floor(Math.random() * numLevels);
+                    const spikeIntensity = 3 + Math.random() * 7; // 3-10x multiplier
+                    
+                    if (bidVolumes[spikeLevel] > 0) {
+                        bidVolumes[spikeLevel] *= spikeIntensity;
+                    }
+                    if (askVolumes[spikeLevel] > 0) {
+                        askVolumes[spikeLevel] *= spikeIntensity;
+                    }
+                }
+                
+                return {
+                    bidVolumes: bidVolumes,
+                    askVolumes: askVolumes,
+                    priceLabels: priceLabels,
+                    midPrice: basePrice,
+                    basePrice: basePrice,
+                    tickSize: this.config.tickSize,
+                    numLevels: numLevels,
+                    bufferUsage: this.dataBuffer.length,
+                    bufferSize: this.config.bufferSize,
+                    timestamp: Date.now(),
+                    stats: {
+                        maxBidVolume: Math.max(...bidVolumes),
+                        maxAskVolume: Math.max(...askVolumes),
+                        p95BidVolume: bidVolumes.sort((a,b) => a-b)[Math.floor(bidVolumes.length * 0.95)],
+                        p95AskVolume: askVolumes.sort((a,b) => a-b)[Math.floor(askVolumes.length * 0.95)]
+                    }
+                };
+            }
+            
+            // Control methods
+            togglePlayPause() {
+                this.isPlaying = !this.isPlaying;
+                this.elements.playPauseBtn.textContent = this.isPlaying ? 'PAUSE' : 'PLAY';
+                this.elements.playPauseBtn.classList.toggle('active', !this.isPlaying);
+            }
+            
+            toggleConfig() {
+                this.elements.configPanel.classList.toggle('hidden');
+                this.elements.configBtn.classList.toggle('active', !this.elements.configPanel.classList.contains('hidden'));
+            }
+            
+            reset() {
+                this.updateCount = 0;
+                this.dataBuffer = [];
+                this.clearCanvas();
+                this.updateStatusDisplay();
+                console.log('[Heatmap] Reset');
+            }
+            
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                    this.elements.fullscreenBtn.textContent = 'EXIT FULL';
+                } else {
+                    document.exitFullscreen();
+                    this.elements.fullscreenBtn.textContent = 'FULLSCREEN';
+                }
+            }
+            
+            updateStatusDisplay() {
+                this.elements.bufferSize.textContent = this.config.bufferSize;
+                this.elements.priceLevels.textContent = this.config.priceLevels;
+                this.elements.tickSize.textContent = this.config.tickSize.toFixed(1);
+            }
+            
+            redraw() {
+                if (this.dataBuffer.length > 0) {
+                    this.renderTimeSeriesHeatmap();
+                } else {
+                    this.clearCanvas();
+                }
+            }
+            
+            // Public API for WebAssembly integration
+            setL2Callback(callback) {
+                this.l2Callback = callback;
+            }
+            
+            setHeatmapCallback(callback) {
+                this.heatmapCallback = callback;
+            }
+        }
+        
+        // Global functions for WebAssembly integration
+        let heatmapViz = null;
+        
+        function onL2Update(event) {
+            if (heatmapViz) {
+                heatmapViz.onL2Update(event);
+            }
+        }
+        
+        function onHeatmapUpdate(heatmapData) {
+            if (heatmapViz) {
+                heatmapViz.onHeatmapUpdate(heatmapData);
+            }
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            console.log('[Heatmap] Initializing orderbook heatmap visualization');
+            heatmapViz = new OrderbookHeatmap();
+            
+            // Set up WebAssembly callbacks if available
+            if (typeof Module !== 'undefined' && Module.L2HeatmapHook) {
+                console.log('[Heatmap] Setting up WebAssembly integration');
+                // Integration would be set up here
+            } else {
+                console.log('[Heatmap] WebAssembly not available, using synthetic data');
+            }
+        });
+        
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            if (heatmapViz && heatmapViz.syntheticInterval) {
+                clearInterval(heatmapViz.syntheticInterval);
+            }
+        });
+    </script>
+</body>
+</html>

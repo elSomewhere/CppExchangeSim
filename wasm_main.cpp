@@ -1,7 +1,8 @@
-// wasm_main.cpp – WebAssembly version of the exchange simulation
+// wasm_main.cpp – WebAssembly version of the exchange simulation with heatmap support
 // -----------------------------------------------------------------------------
 // This file provides JavaScript bindings for the exchange simulation using
 // Emscripten. All parameters from main.cpp are configurable via JavaScript.
+// Now includes integrated heatmap visualization support.
 // -----------------------------------------------------------------------------
 
 #include <iostream>
@@ -26,7 +27,7 @@
 #include "src/TradingSimulation.h"
 #include "ZeroIntelligenceMarketMaker.h"
 #include "RealTimeBusWasm.h"
-#include "L2WasmHook.h"
+#include "L2HeatmapHook.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Beta‑distribution helpers (same as main.cpp)
@@ -217,13 +218,13 @@ void warm_up_agent_cpp(TradingSimulation &sim,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. Main simulation class for WASM
+// 2. Main simulation class for WASM with integrated heatmap support
 // -----------------------------------------------------------------------------
 class ExchangeSimulation {
 private:
     std::unique_ptr<TradingSimulation> sim_;
     std::unique_ptr<RealTimeBusWasm> rtb_;
-    std::unique_ptr<L2WasmHook> l2_hook_;
+    std::unique_ptr<L2HeatmapHook> l2_heatmap_hook_;  // Changed from L2WasmHook
     std::vector<std::shared_ptr<trading::algo::ZeroIntelligenceMarketMaker>> trader_pool_;
     SimulationParams params_;
     std::vector<ZIMMBetaSpreadProfile> spread_profiles_;
@@ -234,9 +235,20 @@ public:
     ExchangeSimulation() : is_running_(false), is_initialized_(false) {
         LoggerConfig::G_CURRENT_LOG_LEVEL = LogLevel::DEBUG;
         
-        // Create L2WasmHook immediately so it's available for callback setting
-        std::cout << "[ExchangeSimulation] DEBUG: Creating L2WasmHook in constructor..." << std::endl;
-        l2_hook_ = std::make_unique<L2WasmHook>();
+        // Create L2HeatmapHook with default parameters
+        std::cout << "[ExchangeSimulation] DEBUG: Creating L2HeatmapHook in constructor..." << std::endl;
+        size_t default_buffer_size = 300;
+        int default_price_levels = 200;
+        double default_tick_size = 1.0;
+        bool enable_console = false;  // Disable console spam in WebAssembly
+        bool enable_l2 = true;
+        bool enable_heatmap = true;
+        size_t default_update_freq = 5;
+        
+        l2_heatmap_hook_ = std::make_unique<L2HeatmapHook>(
+            default_buffer_size, default_price_levels, default_tick_size,
+            enable_console, enable_l2, enable_heatmap, default_update_freq
+        );
         
         // Set default spread profiles
         spread_profiles_ = {
@@ -301,15 +313,69 @@ public:
     // Set the JavaScript callback for L2 events
     void set_l2_callback(emscripten::val callback) {
         std::cout << "[ExchangeSimulation] DEBUG: set_l2_callback called" << std::endl;
-        if (l2_hook_) {
-            std::cout << "[ExchangeSimulation] DEBUG: Setting callback on L2WasmHook (hook exists)..." << std::endl;
-            l2_hook_->set_callback(callback);
+        if (l2_heatmap_hook_) {
+            std::cout << "[ExchangeSimulation] DEBUG: Setting L2 callback on L2HeatmapHook..." << std::endl;
+            l2_heatmap_hook_->set_l2_callback(callback);
             std::cout << "[ExchangeSimulation] DEBUG: L2 callback set successfully" << std::endl;
         } else {
-            std::cout << "[ExchangeSimulation] ERROR: L2WasmHook is null!" << std::endl;
+            std::cout << "[ExchangeSimulation] ERROR: L2HeatmapHook is null!" << std::endl;
+        }
+    }
+    
+    // Set the JavaScript callback for heatmap events
+    void set_heatmap_callback(emscripten::val callback) {
+        std::cout << "[ExchangeSimulation] DEBUG: set_heatmap_callback called" << std::endl;
+        if (l2_heatmap_hook_) {
+            std::cout << "[ExchangeSimulation] DEBUG: Setting heatmap callback on L2HeatmapHook..." << std::endl;
+            l2_heatmap_hook_->set_heatmap_callback(callback);
+            std::cout << "[ExchangeSimulation] DEBUG: Heatmap callback set successfully" << std::endl;
+        } else {
+            std::cout << "[ExchangeSimulation] ERROR: L2HeatmapHook is null!" << std::endl;
         }
     }
 #endif
+
+    // Heatmap configuration methods
+    void set_heatmap_buffer_size(size_t size) {
+        if (l2_heatmap_hook_) {
+            l2_heatmap_hook_->set_buffer_size(size);
+            std::cout << "[ExchangeSimulation] DEBUG: Heatmap buffer size set to " << size << std::endl;
+        }
+    }
+    
+    void set_heatmap_frequency(size_t frequency) {
+        if (l2_heatmap_hook_) {
+            l2_heatmap_hook_->set_heatmap_frequency(frequency);
+            std::cout << "[ExchangeSimulation] DEBUG: Heatmap update frequency set to " << frequency << std::endl;
+        }
+    }
+    
+    void set_heatmap_console_output(bool enable) {
+        if (l2_heatmap_hook_) {
+            l2_heatmap_hook_->set_console_output(enable);
+        }
+    }
+    
+    void set_heatmap_l2_updates(bool enable) {
+        if (l2_heatmap_hook_) {
+            l2_heatmap_hook_->set_l2_updates(enable);
+        }
+    }
+    
+    void set_heatmap_updates(bool enable) {
+        if (l2_heatmap_hook_) {
+            l2_heatmap_hook_->set_heatmap_updates(enable);
+        }
+    }
+    
+    // Heatmap status getters
+    size_t get_heatmap_buffer_size() const {
+        return l2_heatmap_hook_ ? l2_heatmap_hook_->get_buffer_size() : 0;
+    }
+    
+    size_t get_heatmap_buffer_usage() const {
+        return l2_heatmap_hook_ ? l2_heatmap_hook_->get_current_buffer_usage() : 0;
+    }
 
     // Initialize the simulation
     bool initialize() {
@@ -322,9 +388,9 @@ public:
             std::cout << "[ExchangeSimulation] DEBUG: Creating TradingSimulation..." << std::endl;
             sim_ = std::make_unique<TradingSimulation>(params_.symbol, params_.seed);
             
-            // Register the L2 hook
-            std::cout << "[ExchangeSimulation] DEBUG: Registering existing L2WasmHook with event bus..." << std::endl;
-            sim_->get_event_bus().register_pre_publish_hook(l2_hook_.get());
+            // Register the L2 heatmap hook
+            std::cout << "[ExchangeSimulation] DEBUG: Registering L2HeatmapHook with event bus..." << std::endl;
+            sim_->get_event_bus().register_pre_publish_hook(l2_heatmap_hook_.get());
             
             rtb_ = std::make_unique<RealTimeBusWasm>(sim_->get_event_bus());
 
@@ -428,13 +494,13 @@ public:
     // Cleanup
     void cleanup() {
         stop();
-        if (sim_ && l2_hook_) {
-            sim_->get_event_bus().deregister_pre_publish_hook(l2_hook_.get());
+        if (sim_ && l2_heatmap_hook_) {
+            sim_->get_event_bus().deregister_pre_publish_hook(l2_heatmap_hook_.get());
         }
         trader_pool_.clear();
         rtb_.reset();
         sim_.reset();
-        l2_hook_.reset();
+        l2_heatmap_hook_.reset();
         is_initialized_ = false;
     }
 
@@ -479,10 +545,20 @@ EMSCRIPTEN_BINDINGS(exchange_simulation) {
         .function("addSpreadProfile", &ExchangeSimulation::add_spread_profile)
         // L2 callback and control
         .function("setL2Callback", &ExchangeSimulation::set_l2_callback)
+        .function("setHeatmapCallback", &ExchangeSimulation::set_heatmap_callback)
         .function("initialize", &ExchangeSimulation::initialize)
         .function("start", &ExchangeSimulation::start)
         .function("stop", &ExchangeSimulation::stop)
         .function("cleanup", &ExchangeSimulation::cleanup)
+        // Heatmap configuration methods
+        .function("setHeatmapBufferSize", &ExchangeSimulation::set_heatmap_buffer_size)
+        .function("setHeatmapFrequency", &ExchangeSimulation::set_heatmap_frequency)
+        .function("setHeatmapConsoleOutput", &ExchangeSimulation::set_heatmap_console_output)
+        .function("setHeatmapL2Updates", &ExchangeSimulation::set_heatmap_l2_updates)
+        .function("setHeatmapUpdates", &ExchangeSimulation::set_heatmap_updates)
+        // Heatmap status getters
+        .function("getHeatmapBufferSize", &ExchangeSimulation::get_heatmap_buffer_size)
+        .function("getHeatmapBufferUsage", &ExchangeSimulation::get_heatmap_buffer_usage)
         // Status getters
         .function("isRunning", &ExchangeSimulation::is_running)
         .function("isInitialized", &ExchangeSimulation::is_initialized)

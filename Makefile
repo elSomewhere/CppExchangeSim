@@ -39,7 +39,7 @@ EMFLAGS += --bind
 SOURCES = $(WASM_SRC)
 
 # Header dependencies (all headers are included but not compiled separately as they are header-only)
-HEADERS = $(wildcard $(SRC_DIR)/*.h) L2WasmHook.h ZeroIntelligenceMarketMaker.h
+HEADERS = $(wildcard $(SRC_DIR)/*.h) L2HeatmapHook.h HeatmapBuffer.h ZeroIntelligenceMarketMaker.h
 
 # Default target
 all: $(WASM_OUTPUT)
