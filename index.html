@@ -26,11 +26,13 @@
             width: 100vw;
             height: 100vh;
             display: grid;
-            grid-template-rows: 60px 1fr 40px;
+            grid-template-rows: 60px 3fr 2fr 40px;
             grid-template-areas: 
                 "header"
                 "main"
+                "volume-chart"
                 "status";
+            overflow: hidden;
         }
 
         /* Header - clean, technical */
@@ -407,6 +409,10 @@
         }
 
         @media (max-width: 1024px) {
+            .system-container {
+                grid-template-rows: 60px 2fr 1fr 40px;
+            }
+            
             .main-content {
                 grid-template-columns: 1fr;
                 grid-template-rows: 300px 1fr;
@@ -419,6 +425,21 @@
             
             .heatmap-panel {
                 border-right: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .system-container {
+                grid-template-rows: 60px 5fr 3fr 40px;
+            }
+            
+            .volume-chart-header {
+                padding: 8px 12px;
+                height: 35px;
+            }
+            
+            .volume-chart-title, .volume-chart-info {
+                font-size: 10px;
             }
         }
 
@@ -455,6 +476,50 @@
             background: #000000;
             padding: 2px 4px;
             border: 1px solid #004400;
+        }
+
+        /* Volume barplot panel */
+        .volume-chart-panel {
+            grid-area: volume-chart;
+            background: #000000;
+            border-top: 1px solid #333333;
+            border-bottom: 1px solid #333333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .volume-chart-header {
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 40px;
+        }
+
+        .volume-chart-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .volume-chart-info {
+            display: flex;
+            gap: 15px;
+            font-size: 9px;
+            color: #888888;
+        }
+
+        .volume-chart-canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #volumeChartCanvas {
+            display: block;
+            background: #000000;
         }
     </style>
 </head>
@@ -704,6 +769,25 @@
             </div>
         </div>
 
+        <!-- Volume Barplot Panel -->
+        <div class="volume-chart-panel">
+            <div class="volume-chart-header">
+                <div class="volume-chart-title">VOLUME.DISTRIBUTION</div>
+                <div class="volume-chart-info">
+                    <span>LEVELS: <span id="volumeChartLevels">0</span></span>
+                    <span>MAX.VOL: <span id="volumeChartMaxVol">0.000</span></span>
+                    <span>MID: <span id="volumeChartMidPrice">0.00</span></span>
+                </div>
+            </div>
+            <div class="volume-chart-canvas-container">
+                <canvas id="volumeChartCanvas"></canvas>
+                <div id="volumeChartLoading" class="loading">
+                    <div>WAITING FOR VOLUME DATA</div>
+                    <div style="font-size: 10px; margin-top: 10px; color: #888;">INITIALIZE SIMULATION</div>
+                </div>
+            </div>
+        </div>
+
         <!-- System Status Bar -->
         <div class="system-status">
             <div class="status-item">
@@ -740,14 +824,14 @@
     </div>
 
     <script>
-        // Integrated Orderbook Heatmap Visualization
+        // Optimized Orderbook Heatmap Visualization
         class OrderbookHeatmap {
             constructor() {
                 this.canvas = document.getElementById('heatmapCanvas');
                 this.ctx = this.canvas.getContext('2d');
                 
                 // State
-                this.isPlaying = false; // Start paused until simulation starts
+                this.isPlaying = false;
                 this.updateCount = 0;
                 this.lastMidPrice = 50000;
                 this.lastSpread = 5;
@@ -769,38 +853,84 @@
                 this.leftMargin = 60;
                 this.topMargin = 30;
                 
-                // Data buffer
-                this.dataBuffer = [];
+                // Performance optimizations - preallocated buffers
                 this.maxBufferSize = 300;
+                this.dataBuffer = new Array(this.maxBufferSize);
+                this.bufferHead = 0;
+                this.bufferSize = 0;
+                
+                // Preallocated arrays for synthetic data
+                this.preallocatedBids = new Array(this.config.priceLevels);
+                this.preallocatedAsks = new Array(this.config.priceLevels);
+                this.preallocatedPrices = new Array(this.config.priceLevels);
+                
+                // Color cache for performance
+                this.colorCache = new Map();
+                this.precomputeColors();
+                
+                // Offscreen canvas for double buffering
+                this.offscreenCanvas = document.createElement('canvas');
+                this.offscreenCtx = this.offscreenCanvas.getContext('2d');
+                
+                // Reusable ImageData for efficient pixel manipulation
+                this.imageData = null;
+                this.pixels = null;
+                
                 this.syntheticInterval = null;
                 
                 this.setupCanvas();
                 this.setupEventListeners();
             }
             
+            precomputeColors() {
+                // Precompute color values to avoid runtime calculations
+                this.bidColors = [];
+                this.askColors = [];
+                
+                for (let i = 0; i <= 100; i++) {
+                    const intensity = i / 100;
+                    const adjustedIntensity = Math.pow(intensity, 1 / this.config.intensity) * this.config.intensity;
+                    
+                    let color;
+                    if (adjustedIntensity < 0.1) color = '#000000';
+                    else if (adjustedIntensity < 0.3) color = '#222222';
+                    else if (adjustedIntensity < 0.5) color = '#444444';
+                    else if (adjustedIntensity < 0.7) color = '#777777';
+                    else if (adjustedIntensity < 0.9) color = '#aaaaaa';
+                    else color = '#ffffff';
+                    
+                    this.bidColors[i] = color;
+                    this.askColors[i] = color;
+                }
+            }
+            
             setupCanvas() {
                 this.handleResize();
                 this.clearCanvas();
-                // Don't start synthetic data automatically - wait for simulation state
             }
             
             setupEventListeners() {
-                window.addEventListener('resize', () => this.handleResize());
+                // Throttled resize handler
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(() => this.handleResize(), 100);
+                });
                 
-                // Listen for heatmap config changes
                 const intensitySlider = document.getElementById('heatmapIntensity');
                 if (intensitySlider) {
                     intensitySlider.addEventListener('input', (e) => {
                         this.config.intensity = parseInt(e.target.value);
+                        this.precomputeColors(); // Recompute colors when intensity changes
                     });
                 }
                 
                 const bufferSizeInput = document.getElementById('heatmapBufferSize');
                 if (bufferSizeInput) {
                     bufferSizeInput.addEventListener('change', (e) => {
-                        this.config.bufferSize = parseInt(e.target.value);
-                        this.maxBufferSize = this.config.bufferSize;
-                        document.getElementById('heatmapBufferMax').textContent = this.config.bufferSize;
+                        const newSize = parseInt(e.target.value);
+                        this.resizeBuffer(newSize);
+                        document.getElementById('heatmapBufferMax').textContent = newSize;
                     });
                 }
                 
@@ -812,7 +942,28 @@
                 }
             }
             
-            // Simulation state control
+            resizeBuffer(newSize) {
+                if (newSize === this.maxBufferSize) return;
+                
+                const oldBuffer = this.dataBuffer;
+                const oldSize = this.bufferSize;
+                const oldHead = this.bufferHead;
+                
+                this.maxBufferSize = newSize;
+                this.dataBuffer = new Array(newSize);
+                
+                // Copy existing data efficiently
+                const copySize = Math.min(oldSize, newSize);
+                for (let i = 0; i < copySize; i++) {
+                    const oldIndex = (oldHead - copySize + i + oldBuffer.length) % oldBuffer.length;
+                    this.dataBuffer[i] = oldBuffer[oldIndex];
+                }
+                
+                this.bufferHead = copySize % newSize;
+                this.bufferSize = copySize;
+                this.config.bufferSize = newSize;
+            }
+            
             startVisualization(useRealData = true) {
                 console.log('[Heatmap] Starting visualization, useRealData:', useRealData);
                 this.isPlaying = true;
@@ -827,7 +978,6 @@
                     this.usingSyntheticData = false;
                 }
                 
-                // Hide loading overlay
                 const loading = document.getElementById('heatmapLoading');
                 if (loading && !loading.classList.contains('hidden')) {
                     loading.classList.add('hidden');
@@ -842,7 +992,7 @@
             }
             
             startSyntheticData() {
-                if (this.syntheticInterval) return; // Already running
+                if (this.syntheticInterval) return;
                 
                 console.log('[Heatmap] Starting synthetic data generation');
                 
@@ -871,17 +1021,31 @@
                 const container = this.canvas.parentElement;
                 const rect = container.getBoundingClientRect();
                 
-                this.canvas.width = Math.max(400, rect.width - 20);
-                this.canvas.height = Math.max(300, rect.height - 20);
+                const newWidth = Math.max(400, rect.width - 20);
+                const newHeight = Math.max(300, rect.height - 20);
                 
-                // Recalculate cell dimensions
-                const availableWidth = this.canvas.width - this.leftMargin - 20;
-                const availableHeight = this.canvas.height - this.topMargin - 20;
-                
-                this.cellWidth = Math.max(2, Math.floor(availableWidth / this.config.bufferSize));
-                this.cellHeight = Math.max(1, Math.floor(availableHeight / this.config.priceLevels));
-                
-                this.redraw();
+                // Only resize if dimensions actually changed
+                if (this.canvas.width !== newWidth || this.canvas.height !== newHeight) {
+                    this.canvas.width = newWidth;
+                    this.canvas.height = newHeight;
+                    
+                    // Resize offscreen canvas
+                    this.offscreenCanvas.width = newWidth;
+                    this.offscreenCanvas.height = newHeight;
+                    
+                    // Recreate ImageData
+                    this.imageData = this.ctx.createImageData(newWidth, newHeight);
+                    this.pixels = this.imageData.data;
+                    
+                    // Recalculate cell dimensions
+                    const availableWidth = newWidth - this.leftMargin - 20;
+                    const availableHeight = newHeight - this.topMargin - 20;
+                    
+                    this.cellWidth = Math.max(2, Math.floor(availableWidth / this.config.bufferSize));
+                    this.cellHeight = Math.max(1, Math.floor(availableHeight / this.config.priceLevels));
+                    
+                    this.redraw();
+                }
             }
             
             clearCanvas() {
@@ -892,13 +1056,11 @@
             onL2Update(event) {
                 if (!this.isPlaying) return;
                 
-                // Calculate mid price and spread
                 if (event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0) {
                     this.lastMidPrice = (event.bids[0].price + event.asks[0].price) / 2;
                     this.lastSpread = event.asks[0].price - event.bids[0].price;
                 }
                 
-                // If we receive real L2 data, stop synthetic data
                 if (this.usingSyntheticData) {
                     console.log('[Heatmap] Received real L2 data, stopping synthetic generation');
                     this.stopSyntheticData();
@@ -912,122 +1074,179 @@
                 this.updateCount++;
                 document.getElementById('heatmapUpdateCount').textContent = this.updateCount;
                 
-                // Add new data to buffer
                 this.addToDataBuffer(heatmapData);
+                document.getElementById('heatmapBufferUsage').textContent = this.bufferSize;
                 
-                // Update buffer info
-                document.getElementById('heatmapBufferUsage').textContent = this.dataBuffer.length;
-                
-                this.renderTimeSeriesHeatmap();
+                // Use requestAnimationFrame for smooth rendering
+                if (!this.renderPending) {
+                    this.renderPending = true;
+                    requestAnimationFrame(() => {
+                        this.renderTimeSeriesHeatmap();
+                        this.renderPending = false;
+                    });
+                }
             }
             
             addToDataBuffer(heatmapData) {
-                this.dataBuffer.push({
-                    bidVolumes: [...heatmapData.bidVolumes],
-                    askVolumes: [...heatmapData.askVolumes],
-                    midPrice: heatmapData.midPrice,
-                    timestamp: heatmapData.timestamp || Date.now(),
-                    stats: heatmapData.stats
-                });
+                // Efficient circular buffer implementation
+                const entry = this.dataBuffer[this.bufferHead] || {};
                 
-                if (this.dataBuffer.length > this.maxBufferSize) {
-                    this.dataBuffer.shift();
+                // Reuse existing arrays if they exist
+                if (!entry.bidVolumes || entry.bidVolumes.length !== heatmapData.bidVolumes.length) {
+                    entry.bidVolumes = new Array(heatmapData.bidVolumes.length);
+                }
+                if (!entry.askVolumes || entry.askVolumes.length !== heatmapData.askVolumes.length) {
+                    entry.askVolumes = new Array(heatmapData.askVolumes.length);
+                }
+                
+                // Copy data without creating new arrays
+                for (let i = 0; i < heatmapData.bidVolumes.length; i++) {
+                    entry.bidVolumes[i] = heatmapData.bidVolumes[i];
+                }
+                for (let i = 0; i < heatmapData.askVolumes.length; i++) {
+                    entry.askVolumes[i] = heatmapData.askVolumes[i];
+                }
+                
+                entry.midPrice = heatmapData.midPrice;
+                entry.timestamp = heatmapData.timestamp || Date.now();
+                entry.stats = heatmapData.stats;
+                
+                this.dataBuffer[this.bufferHead] = entry;
+                this.bufferHead = (this.bufferHead + 1) % this.maxBufferSize;
+                
+                if (this.bufferSize < this.maxBufferSize) {
+                    this.bufferSize++;
                 }
                 
                 this.heatmapData = heatmapData;
             }
             
             renderTimeSeriesHeatmap() {
-                this.clearCanvas();
+                // Use offscreen canvas for double buffering
+                const ctx = this.offscreenCtx;
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
                 
-                if (this.dataBuffer.length === 0) return;
+                if (this.bufferSize === 0) {
+                    this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+                    return;
+                }
                 
-                const availableWidth = this.canvas.width - this.leftMargin - 20;
+                const availableWidth = this.offscreenCanvas.width - this.leftMargin - 20;
                 const maxCols = Math.floor(availableWidth / this.cellWidth);
                 
-                const numTimePoints = Math.min(this.dataBuffer.length, maxCols);
-                const startIndex = Math.max(0, this.dataBuffer.length - numTimePoints);
+                const numTimePoints = Math.min(this.bufferSize, maxCols);
+                const { maxVolume } = this.calculateGlobalVolumeStats(numTimePoints);
                 
-                const { maxVolume } = this.calculateGlobalVolumeStats(startIndex, numTimePoints);
+                if (maxVolume === 0) {
+                    this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+                    return;
+                }
                 
-                if (maxVolume === 0) return;
-                
-                // Render each time point as a column
+                // Batch render all columns
                 for (let timeIndex = 0; timeIndex < numTimePoints; timeIndex++) {
-                    const dataIndex = startIndex + timeIndex;
+                    const dataIndex = (this.bufferHead - numTimePoints + timeIndex + this.maxBufferSize) % this.maxBufferSize;
                     const data = this.dataBuffer[dataIndex];
                     
+                    if (!data) continue;
+                    
                     const x = this.leftMargin + timeIndex * this.cellWidth;
-                    this.renderColumn(x, data, maxVolume);
+                    this.renderColumnOptimized(ctx, x, data, maxVolume);
                 }
                 
-                // Draw overlays
+                // Draw overlays on offscreen canvas
                 if (this.heatmapData) {
-                    this.drawPriceLabels(this.heatmapData);
-                    this.drawMidPriceLine(this.heatmapData);
-                    this.drawTimeAxis(numTimePoints);
+                    this.drawPriceLabels(ctx, this.heatmapData);
+                    this.drawMidPriceLine(ctx, this.heatmapData);
+                    this.drawTimeAxis(ctx, numTimePoints);
                 }
+                
+                // Copy offscreen canvas to main canvas in one operation
+                this.ctx.drawImage(this.offscreenCanvas, 0, 0);
             }
             
-            renderColumn(x, data, maxVolume) {
+            renderColumnOptimized(ctx, x, data, maxVolume) {
                 const { bidVolumes, askVolumes } = data;
                 const numLevels = Math.min(bidVolumes.length, askVolumes.length);
+                
+                // Batch fill operations by color
+                const bidOperations = new Map();
+                const askOperations = new Map();
                 
                 for (let level = 0; level < numLevels; level++) {
                     const y = this.topMargin + level * this.cellHeight;
                     
-                    // Render bid volume (left half)
+                    // Group bid operations by color
                     if (level < bidVolumes.length && bidVolumes[level] > 0) {
-                        const intensity = bidVolumes[level] / maxVolume;
-                        const color = this.getIntensityColor(intensity, 'bid');
-                        this.ctx.fillStyle = color;
-                        this.ctx.fillRect(x, y, this.cellWidth / 2, this.cellHeight);
+                        const intensity = Math.min(100, Math.floor((bidVolumes[level] / maxVolume) * 100));
+                        const color = this.bidColors[intensity];
+                        
+                        if (!bidOperations.has(color)) {
+                            bidOperations.set(color, []);
+                        }
+                        bidOperations.get(color).push({ x, y, width: this.cellWidth / 2, height: this.cellHeight });
                     }
                     
-                    // Render ask volume (right half)
+                    // Group ask operations by color
                     if (level < askVolumes.length && askVolumes[level] > 0) {
-                        const intensity = askVolumes[level] / maxVolume;
-                        const color = this.getIntensityColor(intensity, 'ask');
-                        this.ctx.fillStyle = color;
-                        this.ctx.fillRect(x + this.cellWidth / 2, y, this.cellWidth / 2, this.cellHeight);
+                        const intensity = Math.min(100, Math.floor((askVolumes[level] / maxVolume) * 100));
+                        const color = this.askColors[intensity];
+                        
+                        if (!askOperations.has(color)) {
+                            askOperations.set(color, []);
+                        }
+                        askOperations.get(color).push({ x: x + this.cellWidth / 2, y, width: this.cellWidth / 2, height: this.cellHeight });
+                    }
+                }
+                
+                // Execute batched operations
+                for (const [color, operations] of bidOperations) {
+                    ctx.fillStyle = color;
+                    for (const op of operations) {
+                        ctx.fillRect(op.x, op.y, op.width, op.height);
+                    }
+                }
+                
+                for (const [color, operations] of askOperations) {
+                    ctx.fillStyle = color;
+                    for (const op of operations) {
+                        ctx.fillRect(op.x, op.y, op.width, op.height);
                     }
                 }
             }
             
-            calculateGlobalVolumeStats(startIndex, numTimePoints) {
-                let allVolumes = [];
+            calculateGlobalVolumeStats(numTimePoints) {
+                const volumeSamples = [];
                 
                 for (let i = 0; i < numTimePoints; i++) {
-                    const data = this.dataBuffer[startIndex + i];
+                    const dataIndex = (this.bufferHead - numTimePoints + i + this.maxBufferSize) % this.maxBufferSize;
+                    const data = this.dataBuffer[dataIndex];
                     
-                    data.bidVolumes.forEach(vol => vol > 0 && allVolumes.push(vol));
-                    data.askVolumes.forEach(vol => vol > 0 && allVolumes.push(vol));
+                    if (!data) continue;
+                    
+                    // Sample every nth volume to reduce computation
+                    const step = Math.max(1, Math.floor(data.bidVolumes.length / 50));
+                    for (let j = 0; j < data.bidVolumes.length; j += step) {
+                        if (data.bidVolumes[j] > 0) volumeSamples.push(data.bidVolumes[j]);
+                        if (data.askVolumes[j] > 0) volumeSamples.push(data.askVolumes[j]);
+                    }
                 }
                 
-                allVolumes.sort((a, b) => a - b);
-                const p95Volume = allVolumes.length > 0 ? 
-                    allVolumes[Math.floor(allVolumes.length * 0.95)] : 0;
+                if (volumeSamples.length === 0) return { maxVolume: 0 };
+                
+                // Use 95th percentile for better visual scaling
+                volumeSamples.sort((a, b) => a - b);
+                const p95Volume = volumeSamples[Math.floor(volumeSamples.length * 0.95)];
                 
                 return { maxVolume: p95Volume };
             }
             
-            getIntensityColor(intensity, side) {
-                const adjustedIntensity = Math.pow(intensity, 1 / this.config.intensity) * this.config.intensity;
-                
-                if (adjustedIntensity < 0.1) return '#000000';
-                if (adjustedIntensity < 0.3) return '#222222';
-                if (adjustedIntensity < 0.5) return '#444444';
-                if (adjustedIntensity < 0.7) return '#777777';
-                if (adjustedIntensity < 0.9) return '#aaaaaa';
-                return '#ffffff';
-            }
-            
-            drawPriceLabels(data) {
+            drawPriceLabels(ctx, data) {
                 if (!data.priceLabels || !data.midPrice) return;
                 
-                this.ctx.fillStyle = '#ffffff';
-                this.ctx.font = '8px Courier New';
-                this.ctx.textAlign = 'right';
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '8px Courier New';
+                ctx.textAlign = 'right';
                 
                 const midLevel = Math.floor(data.numLevels / 2);
                 const labelStep = Math.max(1, Math.floor(data.numLevels / 15));
@@ -1037,74 +1256,75 @@
                         const price = data.priceLabels[level];
                         const y = this.topMargin + level * this.cellHeight + this.cellHeight / 2;
                         
-                        this.ctx.fillStyle = Math.abs(level - midLevel) < 3 ? '#00ff00' : '#888888';
-                        this.ctx.fillText(price.toFixed(1), this.leftMargin - 5, y + 2);
+                        ctx.fillStyle = Math.abs(level - midLevel) < 3 ? '#00ff00' : '#888888';
+                        ctx.fillText(price.toFixed(1), this.leftMargin - 5, y + 2);
                     }
                 }
             }
             
-            drawMidPriceLine(data) {
+            drawMidPriceLine(ctx, data) {
                 if (!data.midPrice || !data.numLevels) return;
                 
                 const midLevel = Math.floor(data.numLevels / 2);
                 const y = this.topMargin + midLevel * this.cellHeight + this.cellHeight / 2;
                 
-                this.ctx.strokeStyle = '#00ff00';
-                this.ctx.lineWidth = 1;
-                this.ctx.setLineDash([2, 2]);
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([2, 2]);
                 
-                this.ctx.beginPath();
-                this.ctx.moveTo(this.leftMargin, y);
-                this.ctx.lineTo(this.canvas.width - 20, y);
-                this.ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(this.leftMargin, y);
+                ctx.lineTo(this.offscreenCanvas.width - 20, y);
+                ctx.stroke();
                 
-                this.ctx.setLineDash([]);
+                ctx.setLineDash([]);
             }
             
-            drawTimeAxis(numTimePoints) {
+            drawTimeAxis(ctx, numTimePoints) {
                 const step = Math.max(1, Math.floor(numTimePoints / 8));
                 
-                this.ctx.strokeStyle = '#333333';
-                this.ctx.lineWidth = 1;
-                this.ctx.font = '7px Courier New';
-                this.ctx.fillStyle = '#666666';
-                this.ctx.textAlign = 'center';
+                ctx.strokeStyle = '#333333';
+                ctx.lineWidth = 1;
+                ctx.font = '7px Courier New';
+                ctx.fillStyle = '#666666';
+                ctx.textAlign = 'center';
                 
                 for (let i = 0; i < numTimePoints; i += step) {
                     const x = this.leftMargin + i * this.cellWidth + this.cellWidth / 2;
                     const y1 = this.topMargin - 5;
                     
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(x, y1);
-                    this.ctx.lineTo(x, y1 + 3);
-                    this.ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(x, y1);
+                    ctx.lineTo(x, y1 + 3);
+                    ctx.stroke();
                     
                     const timeLabel = `T-${numTimePoints - i - 1}`;
-                    this.ctx.fillText(timeLabel, x, y1 - 2);
+                    ctx.fillText(timeLabel, x, y1 - 2);
                 }
                 
-                // Highlight current time
                 if (numTimePoints > 0) {
                     const x = this.leftMargin + (numTimePoints - 1) * this.cellWidth + this.cellWidth / 2;
                     const y1 = this.topMargin - 10;
                     const y2 = this.topMargin + this.config.priceLevels * this.cellHeight + 10;
                     
-                    this.ctx.strokeStyle = '#ffffff';
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(x, y1);
-                    this.ctx.lineTo(x, y2);
-                    this.ctx.stroke();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.moveTo(x, y1);
+                    ctx.lineTo(x, y2);
+                    ctx.stroke();
                     
-                    this.ctx.fillStyle = '#ffffff';
-                    this.ctx.fillText('NOW', x, y1 - 2);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText('NOW', x, y1 - 2);
                 }
             }
             
             generateSyntheticHeatmapData() {
                 const numLevels = this.config.priceLevels;
-                const bidVolumes = new Array(numLevels);
-                const askVolumes = new Array(numLevels);
-                const priceLabels = new Array(numLevels);
+                
+                // Reuse preallocated arrays
+                const bidVolumes = this.preallocatedBids;
+                const askVolumes = this.preallocatedAsks;
+                const priceLabels = this.preallocatedPrices;
                 
                 const basePrice = 50000 + (Math.sin(Date.now() * 0.0001) * 500);
                 const midLevel = Math.floor(numLevels / 2);
@@ -1157,7 +1377,7 @@
             }
             
             redraw() {
-                if (this.dataBuffer.length > 0) {
+                if (this.bufferSize > 0) {
                     this.renderTimeSeriesHeatmap();
                 } else {
                     this.clearCanvas();
@@ -1166,6 +1386,349 @@
             
             cleanup() {
                 this.stopVisualization();
+                
+                // Clear caches
+                this.colorCache.clear();
+                this.bidColors = null;
+                this.askColors = null;
+                
+                // Clear buffers
+                this.dataBuffer = null;
+                this.preallocatedBids = null;
+                this.preallocatedAsks = null;
+                this.preallocatedPrices = null;
+                
+                // Clean up canvases
+                this.offscreenCanvas = null;
+                this.offscreenCtx = null;
+                this.imageData = null;
+                this.pixels = null;
+            }
+        }
+
+        // Volume Distribution Barplot Visualization
+        class VolumeBarplot {
+            constructor() {
+                this.canvas = document.getElementById('volumeChartCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                
+                // State
+                this.isPlaying = false;
+                this.currentData = null;
+                this.lastMidPrice = 50000;
+                
+                // Visual parameters
+                this.leftMargin = 60;
+                this.rightMargin = 20;
+                this.topMargin = 30;
+                this.bottomMargin = 40;
+                
+                // Chart configuration
+                this.config = {
+                    maxBars: 100,
+                    barSpacing: 1,
+                    bidColor: '#00ff4411',
+                    askColor: '#ff004411',
+                    bidColorIntense: '#00ff44',
+                    askColorIntense: '#ff0044',
+                    textColor: '#ffffff',
+                    gridColor: '#333333'
+                };
+                
+                // Performance optimizations
+                this.offscreenCanvas = document.createElement('canvas');
+                this.offscreenCtx = this.offscreenCanvas.getContext('2d');
+                
+                this.setupCanvas();
+                this.setupEventListeners();
+            }
+            
+            setupCanvas() {
+                this.handleResize();
+                this.clearCanvas();
+            }
+            
+            setupEventListeners() {
+                let resizeTimeout;
+                window.addEventListener('resize', () => {
+                    clearTimeout(resizeTimeout);
+                    resizeTimeout = setTimeout(() => this.handleResize(), 100);
+                });
+            }
+            
+            handleResize() {
+                const container = this.canvas.parentElement;
+                const rect = container.getBoundingClientRect();
+                
+                const newWidth = Math.max(400, rect.width - 20);
+                const newHeight = Math.max(150, rect.height - 20);
+                
+                if (this.canvas.width !== newWidth || this.canvas.height !== newHeight) {
+                    this.canvas.width = newWidth;
+                    this.canvas.height = newHeight;
+                    
+                    this.offscreenCanvas.width = newWidth;
+                    this.offscreenCanvas.height = newHeight;
+                    
+                    this.redraw();
+                }
+            }
+            
+            clearCanvas() {
+                this.ctx.fillStyle = '#000000';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            startVisualization() {
+                this.isPlaying = true;
+                const loading = document.getElementById('volumeChartLoading');
+                if (loading && !loading.classList.contains('hidden')) {
+                    loading.classList.add('hidden');
+                }
+            }
+            
+            stopVisualization() {
+                this.isPlaying = false;
+                this.currentData = null;
+                this.clearCanvas();
+                
+                const loading = document.getElementById('volumeChartLoading');
+                if (loading && loading.classList.contains('hidden')) {
+                    loading.classList.remove('hidden');
+                }
+            }
+            
+            onVolumeUpdate(heatmapData) {
+                if (!this.isPlaying || !heatmapData) return;
+                
+                this.currentData = heatmapData;
+                this.lastMidPrice = heatmapData.midPrice || this.lastMidPrice;
+                
+                // Update info display
+                this.updateInfoDisplay(heatmapData);
+                
+                // Render with requestAnimationFrame for smooth updates
+                if (!this.renderPending) {
+                    this.renderPending = true;
+                    requestAnimationFrame(() => {
+                        this.renderVolumeChart();
+                        this.renderPending = false;
+                    });
+                }
+            }
+            
+            updateInfoDisplay(data) {
+                const levelsElement = document.getElementById('volumeChartLevels');
+                const maxVolElement = document.getElementById('volumeChartMaxVol');
+                const midPriceElement = document.getElementById('volumeChartMidPrice');
+                
+                if (levelsElement) {
+                    levelsElement.textContent = Math.min(data.bidVolumes.length, data.askVolumes.length);
+                }
+                
+                if (maxVolElement && data.bidVolumes && data.askVolumes) {
+                    const maxVol = Math.max(
+                        Math.max(...data.bidVolumes.filter(v => v > 0)),
+                        Math.max(...data.askVolumes.filter(v => v > 0))
+                    );
+                    maxVolElement.textContent = formatQuantity(maxVol);
+                }
+                
+                if (midPriceElement && data.midPrice) {
+                    midPriceElement.textContent = formatPrice(data.midPrice);
+                }
+            }
+            
+            renderVolumeChart() {
+                if (!this.currentData) {
+                    this.clearCanvas();
+                    return;
+                }
+                
+                // Use offscreen canvas for double buffering
+                const ctx = this.offscreenCtx;
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
+                
+                const data = this.currentData;
+                const { bidVolumes, askVolumes, priceLabels, midPrice } = data;
+                
+                if (!bidVolumes || !askVolumes || bidVolumes.length === 0) {
+                    this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+                    return;
+                }
+                
+                // Calculate chart dimensions
+                const chartWidth = this.offscreenCanvas.width - this.leftMargin - this.rightMargin;
+                const chartHeight = this.offscreenCanvas.height - this.topMargin - this.bottomMargin;
+                
+                // Determine price range and bar width
+                const numLevels = Math.min(bidVolumes.length, askVolumes.length);
+                const visibleLevels = Math.min(numLevels, this.config.maxBars);
+                const barWidth = Math.max(1, (chartWidth - (visibleLevels - 1) * this.config.barSpacing) / visibleLevels);
+                
+                // Find mid level and calculate visible range
+                const midLevel = Math.floor(numLevels / 2);
+                const halfVisible = Math.floor(visibleLevels / 2);
+                const startLevel = Math.max(0, midLevel - halfVisible);
+                const endLevel = Math.min(numLevels, startLevel + visibleLevels);
+                
+                // Calculate max volume for scaling
+                let maxVolume = 0;
+                for (let i = startLevel; i < endLevel; i++) {
+                    maxVolume = Math.max(maxVolume, bidVolumes[i] || 0, askVolumes[i] || 0);
+                }
+                
+                if (maxVolume === 0) {
+                    this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+                    return;
+                }
+                
+                // Draw grid lines
+                this.drawGrid(ctx, chartWidth, chartHeight, maxVolume);
+                
+                // Draw volume bars
+                for (let i = startLevel; i < endLevel; i++) {
+                    const barIndex = i - startLevel;
+                    const x = this.leftMargin + barIndex * (barWidth + this.config.barSpacing);
+                    
+                    // Draw bid volume (bottom half or full if no ask)
+                    const bidVol = bidVolumes[i] || 0;
+                    const askVol = askVolumes[i] || 0;
+                    
+                    if (bidVol > 0) {
+                        const bidHeight = (bidVol / maxVolume) * chartHeight;
+                        const bidY = this.topMargin + chartHeight - bidHeight;
+                        
+                        // Bid volume color intensity based on volume
+                        const bidIntensity = bidVol / maxVolume;
+                        ctx.fillStyle = bidIntensity > 0.7 ? this.config.bidColorIntense : this.config.bidColor;
+                        ctx.fillRect(x, bidY, barWidth, bidHeight);
+                    }
+                    
+                    if (askVol > 0) {
+                        const askHeight = (askVol / maxVolume) * chartHeight;
+                        const askY = this.topMargin + chartHeight - askHeight;
+                        
+                        // Ask volume color intensity based on volume
+                        const askIntensity = askVol / maxVolume;
+                        ctx.fillStyle = askIntensity > 0.7 ? this.config.askColorIntense : this.config.askColor;
+                        ctx.fillRect(x, askY, barWidth, askHeight);
+                    }
+                    
+                    // Draw price labels for key levels
+                    if (priceLabels && barIndex % Math.max(1, Math.floor(visibleLevels / 10)) === 0) {
+                        const price = priceLabels[i];
+                        if (price !== undefined) {
+                            ctx.fillStyle = this.config.textColor;
+                            ctx.font = '8px Courier New';
+                            ctx.textAlign = 'center';
+                            
+                            const labelY = this.topMargin + chartHeight + 15;
+                            ctx.fillText(price.toFixed(0), x + barWidth / 2, labelY);
+                        }
+                    }
+                }
+                
+                // Draw mid price line
+                if (midPrice && priceLabels) {
+                    this.drawMidPriceLine(ctx, chartWidth, chartHeight, startLevel, endLevel, priceLabels, midPrice, barWidth);
+                }
+                
+                // Draw axes labels
+                this.drawAxesLabels(ctx, chartWidth, chartHeight, maxVolume);
+                
+                // Copy to main canvas
+                this.ctx.drawImage(this.offscreenCanvas, 0, 0);
+            }
+            
+            drawGrid(ctx, chartWidth, chartHeight, maxVolume) {
+                ctx.strokeStyle = this.config.gridColor;
+                ctx.lineWidth = 1;
+                ctx.setLineDash([1, 1]);
+                
+                // Horizontal grid lines (volume levels)
+                const numHLines = 5;
+                for (let i = 0; i <= numHLines; i++) {
+                    const y = this.topMargin + (i / numHLines) * chartHeight;
+                    ctx.beginPath();
+                    ctx.moveTo(this.leftMargin, y);
+                    ctx.lineTo(this.leftMargin + chartWidth, y);
+                    ctx.stroke();
+                    
+                    // Volume labels
+                    const volume = maxVolume * (1 - i / numHLines);
+                    ctx.fillStyle = '#666666';
+                    ctx.font = '7px Courier New';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(volume.toFixed(1), this.leftMargin - 5, y + 2);
+                }
+                
+                ctx.setLineDash([]);
+            }
+            
+            drawMidPriceLine(ctx, chartWidth, chartHeight, startLevel, endLevel, priceLabels, midPrice, barWidth) {
+                // Find the bar index corresponding to mid price
+                let midBarIndex = -1;
+                for (let i = startLevel; i < endLevel; i++) {
+                    if (priceLabels[i] && Math.abs(priceLabels[i] - midPrice) < 0.5) {
+                        midBarIndex = i - startLevel;
+                        break;
+                    }
+                }
+                
+                if (midBarIndex >= 0) {
+                    const x = this.leftMargin + midBarIndex * (barWidth + this.config.barSpacing) + barWidth / 2;
+                    
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([3, 3]);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x, this.topMargin);
+                    ctx.lineTo(x, this.topMargin + chartHeight);
+                    ctx.stroke();
+                    
+                    // Mid price label
+                    ctx.fillStyle = '#00ff00';
+                    ctx.font = '9px Courier New';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('MID', x, this.topMargin - 5);
+                    
+                    ctx.setLineDash([]);
+                }
+            }
+            
+            drawAxesLabels(ctx, chartWidth, chartHeight, maxVolume) {
+                ctx.fillStyle = this.config.textColor;
+                ctx.font = '10px Courier New';
+                
+                // X-axis label
+                ctx.textAlign = 'center';
+                ctx.fillText('PRICE', this.leftMargin + chartWidth / 2, this.topMargin + chartHeight + 35);
+                
+                // Y-axis label (rotated)
+                ctx.save();
+                ctx.translate(15, this.topMargin + chartHeight / 2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.textAlign = 'center';
+                ctx.fillText('VOLUME', 0, 0);
+                ctx.restore();
+            }
+            
+            redraw() {
+                if (this.currentData) {
+                    this.renderVolumeChart();
+                } else {
+                    this.clearCanvas();
+                }
+            }
+            
+            cleanup() {
+                this.stopVisualization();
+                this.offscreenCanvas = null;
+                this.offscreenCtx = null;
+                this.currentData = null;
             }
         }
 
@@ -1173,12 +1736,13 @@
         let Module = null;
         let simulation = null;
         let heatmapViz = null;
+        let volumeChart = null;
         let isInitialized = false;
         let isRunning = false;
         let updateCount = 0;
         let spreadProfileCounter = 0;
 
-        // DOM elements
+        // Performance optimization - cached DOM elements and formatters
         const elements = {
             initBtn: document.getElementById('initBtn'),
             startBtn: document.getElementById('startBtn'),
@@ -1200,6 +1764,49 @@
             errorMessage: document.getElementById('errorMessage')
         };
 
+        // Optimized number formatting with caching
+        const numberFormatCache = new Map();
+        const priceFormatter = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+        const quantityFormatter = new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 4,
+            maximumFractionDigits: 4
+        });
+
+        function formatPrice(price) {
+            return priceFormatter.format(price);
+        }
+
+        function formatQuantity(quantity) {
+            return quantityFormatter.format(quantity);
+        }
+
+        // Throttled update functions to prevent excessive DOM updates
+        const throttleState = {
+            lastStatusUpdate: 0,
+            lastQueueUpdate: 0,
+            statusUpdateInterval: 100, // ms
+            queueUpdateInterval: 200   // ms
+        };
+
+        function throttledStatusUpdate(newStatus) {
+            const now = Date.now();
+            if (now - throttleState.lastStatusUpdate > throttleState.statusUpdateInterval) {
+                elements.simStatus.textContent = newStatus;
+                throttleState.lastStatusUpdate = now;
+            }
+        }
+
+        function throttledQueueUpdate(queueSize) {
+            const now = Date.now();
+            if (now - throttleState.lastQueueUpdate > throttleState.queueUpdateInterval) {
+                elements.queueSize.textContent = queueSize;
+                throttleState.lastQueueUpdate = now;
+            }
+        }
+
         // Utility functions
         function toggleSection(header) {
             const section = header.parentElement;
@@ -1217,7 +1824,7 @@
         }
 
         function updateStatus(status) {
-            elements.simStatus.textContent = status;
+            throttledStatusUpdate(status);
             console.log('[System] Status:', status);
         }
 
@@ -1322,30 +1929,16 @@
                 const midPrice = (event.bids[0].price + event.asks[0].price) / 2;
                 const spread = event.asks[0].price - event.bids[0].price;
                 
-                elements.midPrice.textContent = midPrice.toFixed(2);
-                elements.spread.textContent = spread.toFixed(2);
+                elements.midPrice.textContent = formatPrice(midPrice);
+                elements.spread.textContent = formatPrice(spread);
             }
 
-            // Update orderbook display
-            const askHtml = event.asks.slice().reverse().map(level => 
-                `<div class="orderbook-level">
-                    <div class="price">${level.price.toFixed(2)}</div>
-                    <div class="quantity">${level.quantity.toFixed(4)}</div>
-                </div>`
-            ).join('');
-            elements.askLevels.innerHTML = askHtml;
+            // Update orderbook display with optimized DOM manipulation
+            updateOrderbookDisplay(event.asks, event.bids);
 
-            const bidHtml = event.bids.map(level => 
-                `<div class="orderbook-level">
-                    <div class="price">${level.price.toFixed(2)}</div>
-                    <div class="quantity">${level.quantity.toFixed(4)}</div>
-                </div>`
-            ).join('');
-            elements.bidLevels.innerHTML = bidHtml;
-
-            // Update queue size
+            // Update queue size with throttling
             if (simulation) {
-                elements.queueSize.textContent = simulation.getQueueSize();
+                throttledQueueUpdate(simulation.getQueueSize());
             }
 
             // Forward to heatmap
@@ -1354,10 +1947,92 @@
             }
         }
 
+        // Optimized orderbook display with DOM element reuse
+        const orderbookState = {
+            askElements: [],
+            bidElements: [],
+            maxLevels: 20,
+            elementPool: [],
+            initialized: false
+        };
+
+        function initializeOrderbookElements() {
+            if (orderbookState.initialized) return;
+            
+            // Pre-create DOM elements to avoid frequent creation/destruction
+            for (let i = 0; i < orderbookState.maxLevels; i++) {
+                const askElement = createOrderbookLevel();
+                const bidElement = createOrderbookLevel();
+                
+                orderbookState.askElements.push(askElement);
+                orderbookState.bidElements.push(bidElement);
+                
+                elements.askLevels.appendChild(askElement);
+                elements.bidLevels.appendChild(bidElement);
+            }
+            
+            orderbookState.initialized = true;
+        }
+
+        function createOrderbookLevel() {
+            const level = document.createElement('div');
+            level.className = 'orderbook-level';
+            level.style.display = 'none'; // Initially hidden
+            
+            const price = document.createElement('div');
+            price.className = 'price';
+            
+            const quantity = document.createElement('div');
+            quantity.className = 'quantity';
+            
+            level.appendChild(price);
+            level.appendChild(quantity);
+            
+            return level;
+        }
+
+        function updateOrderbookDisplay(asks, bids) {
+            if (!orderbookState.initialized) {
+                initializeOrderbookElements();
+            }
+
+            // Update asks (reversed order for display)
+            const reversedAsks = asks.slice().reverse();
+            updateOrderbookSide(reversedAsks, orderbookState.askElements);
+            
+            // Update bids
+            updateOrderbookSide(bids, orderbookState.bidElements);
+        }
+
+        function updateOrderbookSide(levels, domElements) {
+            const numLevels = Math.min(levels.length, domElements.length);
+            
+            // Update visible levels
+            for (let i = 0; i < numLevels; i++) {
+                const level = levels[i];
+                const element = domElements[i];
+                
+                // Update content using optimized formatters
+                element.children[0].textContent = formatPrice(level.price);
+                element.children[1].textContent = formatQuantity(level.quantity);
+                element.style.display = 'grid';
+            }
+            
+            // Hide unused elements
+            for (let i = numLevels; i < domElements.length; i++) {
+                domElements[i].style.display = 'none';
+            }
+        }
+
         // Heatmap callback
         function onHeatmapUpdate(heatmapData) {
             if (heatmapViz) {
                 heatmapViz.onHeatmapUpdate(heatmapData);
+            }
+            
+            // Also update volume chart with current data
+            if (volumeChart) {
+                volumeChart.onVolumeUpdate(heatmapData);
             }
         }
 
@@ -1486,7 +2161,13 @@
                         heatmapViz.startVisualization(true); // true = use real data from WebAssembly
                     }
                     
-                    // Monitor queue
+                    // Start volume chart visualization
+                    if (volumeChart) {
+                        volumeChart.startVisualization();
+                    }
+                    
+                    // Optimized monitoring with less frequent polling
+                    let lastQueueSize = -1;
                     const monitor = setInterval(() => {
                         if (!isRunning) {
                             clearInterval(monitor);
@@ -1494,13 +2175,18 @@
                         }
                         
                         const queueSize = simulation.getQueueSize();
-                        elements.queueSize.textContent = queueSize;
+                        
+                        // Only update if queue size changed
+                        if (queueSize !== lastQueueSize) {
+                            throttledQueueUpdate(queueSize);
+                            lastQueueSize = queueSize;
+                        }
                         
                         if (queueSize === 0) {
                             stopSimulation();
                             updateStatus('COMPLETE');
                         }
-                    }, 100);
+                    }, 250); // Reduced from 100ms to 250ms
                 } else {
                     throw new Error('Failed to start simulation');
                 }
@@ -1525,6 +2211,11 @@
                 if (heatmapViz) {
                     heatmapViz.stopVisualization();
                 }
+                
+                // Stop volume chart visualization
+                if (volumeChart) {
+                    volumeChart.stopVisualization();
+                }
             } catch (error) {
                 showError(`Stop failed: ${error.message}`);
             }
@@ -1546,6 +2237,29 @@
                 // Reset heatmap UI counters
                 document.getElementById('heatmapUpdateCount').textContent = '0';
                 document.getElementById('heatmapBufferUsage').textContent = '0';
+            }
+            
+            // Reset volume chart visualization
+            if (volumeChart) {
+                volumeChart.stopVisualization();
+                volumeChart.currentData = null;
+                volumeChart.clearCanvas();
+                
+                // Reset volume chart UI
+                document.getElementById('volumeChartLevels').textContent = '0';
+                document.getElementById('volumeChartMaxVol').textContent = '0.000';
+                document.getElementById('volumeChartMidPrice').textContent = '0.00';
+            }
+            
+            // Reset performance states
+            throttleState.lastStatusUpdate = 0;
+            throttleState.lastQueueUpdate = 0;
+            numberFormatCache.clear();
+            
+            // Reset orderbook display efficiently
+            if (orderbookState.initialized) {
+                orderbookState.askElements.forEach(el => el.style.display = 'none');
+                orderbookState.bidElements.forEach(el => el.style.display = 'none');
             }
             
             // Reset form values
@@ -1599,10 +2313,6 @@
             elements.activeAgents.textContent = '0';
             elements.currentSymbol.textContent = '-';
             
-            // Clear orderbook display
-            elements.askLevels.innerHTML = '';
-            elements.bidLevels.innerHTML = '';
-            
             // Reset spread profiles
             initializeDefaultSpreadProfiles();
             
@@ -1614,6 +2324,9 @@
                 // Re-enable demo mode if no WebAssembly
                 if (heatmapViz) {
                     heatmapViz.startVisualization(false);
+                }
+                if (volumeChart) {
+                    volumeChart.startVisualization();
                 }
             }
             
@@ -1653,6 +2366,9 @@
                 // Initialize heatmap visualization
                 heatmapViz = new OrderbookHeatmap();
                 
+                // Initialize volume chart
+                volumeChart = new VolumeBarplot();
+                
                 // Initialize default profiles
                 initializeDefaultSpreadProfiles();
                 
@@ -1670,6 +2386,9 @@
             // Initialize heatmap visualization
             heatmapViz = new OrderbookHeatmap();
             
+            // Initialize volume chart
+            volumeChart = new VolumeBarplot();
+            
             // Initialize default profiles (for display purposes)
             initializeDefaultSpreadProfiles();
             
@@ -1682,6 +2401,9 @@
             
             // Start synthetic heatmap data for demo
             heatmapViz.startVisualization(false); // false = use synthetic data
+            
+            // Start volume chart in demo mode
+            volumeChart.startVisualization();
             
             // Show demo message
             showError('Demo Mode: WebAssembly not available. Showing synthetic heatmap data only.');
@@ -1700,6 +2422,9 @@
             }
             if (heatmapViz) {
                 heatmapViz.cleanup();
+            }
+            if (volumeChart) {
+                volumeChart.cleanup();
             }
         });
 
