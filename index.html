@@ -747,11 +747,12 @@
                 this.ctx = this.canvas.getContext('2d');
                 
                 // State
-                this.isPlaying = true;
+                this.isPlaying = false; // Start paused until simulation starts
                 this.updateCount = 0;
                 this.lastMidPrice = 50000;
                 this.lastSpread = 5;
                 this.heatmapData = null;
+                this.usingSyntheticData = false;
                 
                 // Configuration
                 this.config = {
@@ -771,6 +772,7 @@
                 // Data buffer
                 this.dataBuffer = [];
                 this.maxBufferSize = 300;
+                this.syntheticInterval = null;
                 
                 this.setupCanvas();
                 this.setupEventListeners();
@@ -779,8 +781,7 @@
             setupCanvas() {
                 this.handleResize();
                 this.clearCanvas();
-                // Start with synthetic data for demo purposes
-                this.startSyntheticData();
+                // Don't start synthetic data automatically - wait for simulation state
             }
             
             setupEventListeners() {
@@ -808,6 +809,61 @@
                     updateFreqInput.addEventListener('change', (e) => {
                         this.config.updateFreq = parseInt(e.target.value);
                     });
+                }
+            }
+            
+            // Simulation state control
+            startVisualization(useRealData = true) {
+                console.log('[Heatmap] Starting visualization, useRealData:', useRealData);
+                this.isPlaying = true;
+                
+                if (!useRealData && !this.syntheticInterval) {
+                    console.log('[Heatmap] Starting synthetic data generation');
+                    this.usingSyntheticData = true;
+                    this.startSyntheticData();
+                } else if (useRealData && this.syntheticInterval) {
+                    console.log('[Heatmap] Stopping synthetic data, switching to real data');
+                    this.stopSyntheticData();
+                    this.usingSyntheticData = false;
+                }
+                
+                // Hide loading overlay
+                const loading = document.getElementById('heatmapLoading');
+                if (loading && !loading.classList.contains('hidden')) {
+                    loading.classList.add('hidden');
+                }
+            }
+            
+            stopVisualization() {
+                console.log('[Heatmap] Stopping visualization');
+                this.isPlaying = false;
+                this.stopSyntheticData();
+                this.usingSyntheticData = false;
+            }
+            
+            startSyntheticData() {
+                if (this.syntheticInterval) return; // Already running
+                
+                console.log('[Heatmap] Starting synthetic data generation');
+                
+                let counter = 0;
+                this.syntheticInterval = setInterval(() => {
+                    if (!this.isPlaying || !this.usingSyntheticData) return;
+                    
+                    if (counter % this.config.updateFreq === 0) {
+                        const heatmapData = this.generateSyntheticHeatmapData();
+                        this.onHeatmapUpdate(heatmapData);
+                    }
+                    
+                    counter++;
+                }, 200);
+            }
+            
+            stopSyntheticData() {
+                if (this.syntheticInterval) {
+                    console.log('[Heatmap] Stopping synthetic data generation');
+                    clearInterval(this.syntheticInterval);
+                    this.syntheticInterval = null;
                 }
             }
             
@@ -842,10 +898,11 @@
                     this.lastSpread = event.asks[0].price - event.bids[0].price;
                 }
                 
-                // Hide loading overlay
-                const loading = document.getElementById('heatmapLoading');
-                if (loading && !loading.classList.contains('hidden')) {
-                    loading.classList.add('hidden');
+                // If we receive real L2 data, stop synthetic data
+                if (this.usingSyntheticData) {
+                    console.log('[Heatmap] Received real L2 data, stopping synthetic generation');
+                    this.stopSyntheticData();
+                    this.usingSyntheticData = false;
                 }
             }
             
@@ -1043,23 +1100,6 @@
                 }
             }
             
-            // Demo data generation
-            startSyntheticData() {
-                let counter = 0;
-                const interval = setInterval(() => {
-                    if (!this.isPlaying) return;
-                    
-                    if (counter % this.config.updateFreq === 0) {
-                        const heatmapData = this.generateSyntheticHeatmapData();
-                        this.onHeatmapUpdate(heatmapData);
-                    }
-                    
-                    counter++;
-                }, 200);
-                
-                this.syntheticInterval = interval;
-            }
-            
             generateSyntheticHeatmapData() {
                 const numLevels = this.config.priceLevels;
                 const bidVolumes = new Array(numLevels);
@@ -1125,9 +1165,7 @@
             }
             
             cleanup() {
-                if (this.syntheticInterval) {
-                    clearInterval(this.syntheticInterval);
-                }
+                this.stopVisualization();
             }
         }
 
@@ -1443,6 +1481,11 @@
                     elements.stopBtn.disabled = false;
                     elements.initBtn.disabled = true;
                     
+                    // Start heatmap visualization with real data
+                    if (heatmapViz) {
+                        heatmapViz.startVisualization(true); // true = use real data from WebAssembly
+                    }
+                    
                     // Monitor queue
                     const monitor = setInterval(() => {
                         if (!isRunning) {
@@ -1477,12 +1520,34 @@
                 elements.startBtn.disabled = false;
                 elements.stopBtn.disabled = true;
                 elements.initBtn.disabled = false;
+                
+                // Stop heatmap visualization
+                if (heatmapViz) {
+                    heatmapViz.stopVisualization();
+                }
             } catch (error) {
                 showError(`Stop failed: ${error.message}`);
             }
         }
 
         function resetToDefaults() {
+            // Stop any running processes first
+            if (isRunning) {
+                stopSimulation();
+            }
+            
+            // Reset heatmap visualization
+            if (heatmapViz) {
+                heatmapViz.stopVisualization();
+                heatmapViz.dataBuffer = []; // Clear data buffer
+                heatmapViz.updateCount = 0;
+                heatmapViz.clearCanvas();
+                
+                // Reset heatmap UI counters
+                document.getElementById('heatmapUpdateCount').textContent = '0';
+                document.getElementById('heatmapBufferUsage').textContent = '0';
+            }
+            
             // Reset form values
             document.getElementById('agents').value = 10;
             document.getElementById('symbol').value = 'BTC/USD';
@@ -1517,9 +1582,42 @@
             document.getElementById('heatmapIntensity').value = 3;
             document.getElementById('heatmapEnabled').checked = true;
             
+            // Reset simulation state
+            isInitialized = false;
+            isRunning = false;
+            updateCount = 0;
+            
+            // Reset UI state
+            elements.startBtn.disabled = true;
+            elements.stopBtn.disabled = true;
+            elements.initBtn.disabled = false;
+            elements.updateCount.textContent = '0';
+            elements.l2UpdateCount.textContent = '0';
+            elements.queueSize.textContent = '0';
+            elements.midPrice.textContent = '0.00';
+            elements.spread.textContent = '0.00';
+            elements.activeAgents.textContent = '0';
+            elements.currentSymbol.textContent = '-';
+            
+            // Clear orderbook display
+            elements.askLevels.innerHTML = '';
+            elements.bidLevels.innerHTML = '';
+            
             // Reset spread profiles
             initializeDefaultSpreadProfiles();
             
+            // Update status
+            if (Module) {
+                updateStatus('LOADED');
+            } else {
+                updateStatus('DEMO MODE');
+                // Re-enable demo mode if no WebAssembly
+                if (heatmapViz) {
+                    heatmapViz.startVisualization(false);
+                }
+            }
+            
+            hideError();
             console.log('[System] Reset to defaults');
         }
 
@@ -1543,7 +1641,8 @@
             console.log('[System] Loading WebAssembly module...');
             
             if (typeof ExchangeSimulationModule === 'undefined') {
-                showError('ExchangeSimulationModule not found');
+                console.log('[System] WebAssembly module not found, starting demo mode');
+                startDemoMode();
                 return;
             }
 
@@ -1560,8 +1659,32 @@
                 updateStatus('LOADED');
                 
             }).catch(error => {
-                showError(`Failed to load WebAssembly: ${error.message}`);
+                console.log('[System] WebAssembly loading failed, starting demo mode');
+                startDemoMode();
             });
+        }
+
+        function startDemoMode() {
+            console.log('[System] Starting demo mode with synthetic data');
+            
+            // Initialize heatmap visualization
+            heatmapViz = new OrderbookHeatmap();
+            
+            // Initialize default profiles (for display purposes)
+            initializeDefaultSpreadProfiles();
+            
+            updateStatus('DEMO MODE');
+            
+            // Disable WebAssembly-dependent controls
+            elements.initBtn.disabled = true;
+            elements.startBtn.disabled = true;
+            elements.stopBtn.disabled = true;
+            
+            // Start synthetic heatmap data for demo
+            heatmapViz.startVisualization(false); // false = use synthetic data
+            
+            // Show demo message
+            showError('Demo Mode: WebAssembly not available. Showing synthetic heatmap data only.');
         }
 
         // Auto-load when page is ready
