@@ -98,6 +98,27 @@ public:
     size_t get_buffer_size() const { return heatmap_buffer_->get_buffer_size(); }
     size_t get_current_buffer_usage() const { return heatmap_buffer_->get_current_size(); }
     
+    // Generic function to send any message to JavaScript
+    void send_message_to_js(const std::string& event_type, const std::string& details, AgentId publisher_id, TopicId topic_id, Timestamp publish_time) {
+#ifdef __EMSCRIPTEN__
+        if (!has_l2_callback) return;
+
+        try {
+            emscripten::val js_event = emscripten::val::object();
+            js_event.set("eventType", event_type);
+            js_event.set("details", details);
+            js_event.set("publisherId", static_cast<int>(publisher_id));
+            js_event.set("topicId", static_cast<int>(topic_id));
+            js_event.set("timestamp", 
+                std::chrono::time_point_cast<std::chrono::milliseconds>(publish_time).time_since_epoch().count());
+            
+            js_l2_callback(js_event);
+        } catch (...) {
+            std::cout << "[L2HeatmapHook] ERROR: JavaScript callback threw an exception for " << event_type << std::endl;
+        }
+#endif
+    }
+    
     void print_l2_top_10(const ModelEvents::LTwoOrderBookEvent &event) {
         if (!enable_console_output_) return;
         
@@ -136,17 +157,30 @@ public:
     }
     
 #ifdef __EMSCRIPTEN__
-    void send_l2_to_js(const ModelEvents::LTwoOrderBookEvent &event) {
+    void send_l2_to_js(const ModelEvents::LTwoOrderBookEvent &event, AgentId publisher_id = 0, TopicId topic_id = 0, Timestamp publish_time = Timestamp{}) {
         if (!enable_l2_updates_ || !has_l2_callback) return;
         
-        // Create JavaScript object with the L2 data (same as L2WasmHook)
+        // Create JavaScript object with the L2 data
         emscripten::val js_event = emscripten::val::object();
         
+        // Add eventType field for proper identification
+        js_event.set("eventType", "LTwoOrderBookEvent");
         js_event.set("symbol", event.symbol);
         js_event.set("exchange_ts", event.exchange_ts ? 
             std::chrono::time_point_cast<std::chrono::milliseconds>(*event.exchange_ts).time_since_epoch().count() : -1);
         js_event.set("ingress_ts", 
             std::chrono::time_point_cast<std::chrono::milliseconds>(event.ingress_ts).time_since_epoch().count());
+
+        // Add generic message fields for consistency
+        js_event.set("publisherId", static_cast<int>(publisher_id));
+        js_event.set("topicId", static_cast<int>(topic_id));
+        if (publish_time != Timestamp{}) {
+            js_event.set("timestamp", 
+                std::chrono::time_point_cast<std::chrono::milliseconds>(publish_time).time_since_epoch().count());
+        } else {
+            js_event.set("timestamp", 
+                std::chrono::time_point_cast<std::chrono::milliseconds>(event.ingress_ts).time_since_epoch().count());
+        }
 
         // Convert bids to JavaScript array (limit to top 10 for performance)
         emscripten::val js_bids = emscripten::val::array();
@@ -233,7 +267,7 @@ public:
     }
 #endif
     
-    // Override only the LTwoOrderBookEvent handler
+    // Override the LTwoOrderBookEvent handler
     void on_pre_publish_LTwoOrderBookEvent(
             const ModelEvents::LTwoOrderBookEvent& event,
             AgentId publisher_id,
@@ -248,8 +282,8 @@ public:
         print_l2_top_10(event);
         
 #ifdef __EMSCRIPTEN__
-        // Send L2 data to JavaScript
-        send_l2_to_js(event);
+        // Send L2 data to JavaScript with proper event fields
+        send_l2_to_js(event, publisher_id, published_topic_id, publish_time);
         
         // Send heatmap data based on frequency
         update_counter_++;
@@ -259,8 +293,96 @@ public:
 #endif
     }
 
-    // All other on_pre_publish_SpecificEvent methods are inherited from TradingPrePublishHook
-    // and will use their default (noop) implementation.
+    // Override all other event handlers to capture all trading events
+
+    void on_pre_publish_CheckLimitOrderExpirationEvent(const ModelEvents::CheckLimitOrderExpirationEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        send_message_to_js("CheckLimitOrderExpirationEvent", "Order expiration check", pid, tid, ts);
+    }
+
+    void on_pre_publish_Bang(const ModelEvents::Bang& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        send_message_to_js("Bang", "System bang event", pid, tid, ts);
+    }
+
+    void on_pre_publish_LimitOrderEvent(const ModelEvents::LimitOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Side: " + std::string(event.side == ModelEvents::Side::BUY ? "BUY" : "SELL") + 
+                            ", Price: " + std::to_string(ModelEvents::price_to_float(event.price)) +
+                            ", Qty: " + std::to_string(ModelEvents::quantity_to_float(event.quantity));
+        send_message_to_js("LimitOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_MarketOrderEvent(const ModelEvents::MarketOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Side: " + std::string(event.side == ModelEvents::Side::BUY ? "BUY" : "SELL") + 
+                            ", Qty: " + std::to_string(ModelEvents::quantity_to_float(event.quantity));
+        send_message_to_js("MarketOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_TradeEvent(const ModelEvents::TradeEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Trade: " + std::to_string(ModelEvents::quantity_to_float(event.quantity)) + 
+                            " @ " + std::to_string(ModelEvents::price_to_float(event.price));
+        send_message_to_js("TradeEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_LimitOrderAckEvent(const ModelEvents::LimitOrderAckEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Order ID: " + std::to_string(event.order_id) + 
+                            ", Side: " + std::string(event.side == ModelEvents::Side::BUY ? "BUY" : "SELL");
+        send_message_to_js("LimitOrderAckEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_MarketOrderAckEvent(const ModelEvents::MarketOrderAckEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Order ID: " + std::to_string(event.order_id) + 
+                            ", Side: " + std::string(event.side == ModelEvents::Side::BUY ? "BUY" : "SELL");
+        send_message_to_js("MarketOrderAckEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_PartialFillLimitOrderEvent(const ModelEvents::PartialFillLimitOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Order ID: " + std::to_string(event.order_id) + 
+                            ", Fill Qty: " + std::to_string(ModelEvents::quantity_to_float(event.fill_qty)) +
+                            ", Fill Price: " + std::to_string(ModelEvents::price_to_float(event.fill_price));
+        send_message_to_js("PartialFillLimitOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_PartialFillMarketOrderEvent(const ModelEvents::PartialFillMarketOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Order ID: " + std::to_string(event.order_id) + 
+                            ", Fill Qty: " + std::to_string(ModelEvents::quantity_to_float(event.fill_qty)) +
+                            ", Fill Price: " + std::to_string(ModelEvents::price_to_float(event.fill_price));
+        send_message_to_js("PartialFillMarketOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_FullFillLimitOrderEvent(const ModelEvents::FullFillLimitOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Order ID: " + std::to_string(event.order_id) + 
+                            ", Fill Price: " + std::to_string(ModelEvents::price_to_float(event.fill_price));
+        send_message_to_js("FullFillLimitOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_FullFillMarketOrderEvent(const ModelEvents::FullFillMarketOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Order ID: " + std::to_string(event.order_id) + 
+                            ", Fill Price: " + std::to_string(ModelEvents::price_to_float(event.fill_price));
+        send_message_to_js("FullFillMarketOrderEvent", details, pid, tid, ts);
+    }
+
+    // Add other important event handlers (I'll add more if needed)
+    void on_pre_publish_PartialCancelLimitOrderEvent(const ModelEvents::PartialCancelLimitOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Target Order ID: " + std::to_string(event.target_order_id) + 
+                            ", Cancel Qty: " + std::to_string(ModelEvents::quantity_to_float(event.cancel_qty));
+        send_message_to_js("PartialCancelLimitOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_FullCancelLimitOrderEvent(const ModelEvents::FullCancelLimitOrderEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Target Order ID: " + std::to_string(event.target_order_id);
+        send_message_to_js("FullCancelLimitOrderEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_LimitOrderRejectEvent(const ModelEvents::LimitOrderRejectEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Client Order ID: " + std::to_string(event.client_order_id) + ", Symbol: " + event.symbol;
+        send_message_to_js("LimitOrderRejectEvent", details, pid, tid, ts);
+    }
+
+    void on_pre_publish_MarketOrderRejectEvent(const ModelEvents::MarketOrderRejectEvent& event, AgentId pid, TopicId tid, Timestamp ts, const BusT* bus) override {
+        std::string details = "Client Order ID: " + std::to_string(event.client_order_id) + ", Symbol: " + event.symbol;
+        send_message_to_js("MarketOrderRejectEvent", details, pid, tid, ts);
+    }
+
+    // Now these methods handle all event types, not just L2!
 };
 
 #ifdef __EMSCRIPTEN__

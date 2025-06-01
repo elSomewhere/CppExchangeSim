@@ -30,7 +30,7 @@
             grid-template-areas: 
                 "header"
                 "main"
-                "volume-chart"
+                "bottom"
                 "status";
             overflow: hidden;
         }
@@ -401,6 +401,169 @@
             max-width: 400px;
         }
 
+        /* Bottom area - split between volume chart and message log */
+        .bottom-panel {
+            grid-area: bottom;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: #000000;
+            border-top: 1px solid #333333;
+            border-bottom: 1px solid #333333;
+        }
+
+        /* Volume barplot panel */
+        .volume-chart-panel {
+            background: #000000;
+            border-right: 1px solid #333333;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .volume-chart-header {
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 40px;
+        }
+
+        .volume-chart-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .volume-chart-info {
+            display: flex;
+            gap: 15px;
+            font-size: 9px;
+            color: #888888;
+        }
+
+        .volume-chart-canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #volumeChartCanvas {
+            display: block;
+            background: #000000;
+        }
+
+        /* Message log panel */
+        .message-log-panel {
+            background: #000000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message-log-header {
+            background: #000000;
+            border-bottom: 1px solid #333333;
+            padding: 10px 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 40px;
+        }
+
+        .message-log-title {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .message-log-info {
+            display: flex;
+            gap: 15px;
+            font-size: 9px;
+            color: #888888;
+        }
+
+        .message-log-controls {
+            display: flex;
+            gap: 5px;
+        }
+
+        .message-log-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 9px;
+            line-height: 1.3;
+        }
+
+        .log-message {
+            padding: 3px 0;
+            border-bottom: 1px solid #111111;
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            gap: 10px;
+            align-items: start;
+        }
+
+        .log-timestamp {
+            color: #666666;
+            white-space: nowrap;
+            font-size: 8px;
+        }
+
+        .log-event-type {
+            color: #00ff00;
+            font-weight: bold;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .log-details {
+            color: #cccccc;
+            word-break: break-word;
+        }
+
+        .log-agent {
+            color: #888888;
+            font-size: 8px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        /* Different colors for different event types */
+        .log-message[data-event-type*="Order"] .log-event-type {
+            color: #00aaff;
+        }
+
+        .log-message[data-event-type*="Cancel"] .log-event-type {
+            color: #ff6600;
+        }
+
+        .log-message[data-event-type*="Fill"] .log-event-type {
+            color: #00ff00;
+        }
+
+        .log-message[data-event-type*="Trade"] .log-event-type {
+            color: #ffff00;
+        }
+
+        .log-message[data-event-type*="Reject"] .log-event-type {
+            color: #ff0000;
+        }
+
+        .log-message[data-event-type*="Expired"] .log-event-type {
+            color: #ff4444;
+        }
+
+        .log-message[data-event-type*="Ack"] .log-event-type {
+            color: #44ff44;
+        }
+
+        .log-message[data-event-type="LTwoOrderBookEvent"] .log-event-type {
+            color: #ffffff;
+        }
+
         /* Responsive adjustments */
         @media (max-width: 1400px) {
             .main-content {
@@ -425,6 +588,16 @@
             
             .heatmap-panel {
                 border-right: none;
+            }
+
+            .bottom-panel {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+
+            .volume-chart-panel {
+                border-right: none;
+                border-bottom: 1px solid #333333;
             }
         }
 
@@ -476,50 +649,6 @@
             background: #000000;
             padding: 2px 4px;
             border: 1px solid #004400;
-        }
-
-        /* Volume barplot panel */
-        .volume-chart-panel {
-            grid-area: volume-chart;
-            background: #000000;
-            border-top: 1px solid #333333;
-            border-bottom: 1px solid #333333;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .volume-chart-header {
-            background: #000000;
-            border-bottom: 1px solid #333333;
-            padding: 10px 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: 40px;
-        }
-
-        .volume-chart-title {
-            font-size: 11px;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-
-        .volume-chart-info {
-            display: flex;
-            gap: 15px;
-            font-size: 9px;
-            color: #888888;
-        }
-
-        .volume-chart-canvas-container {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-        }
-
-        #volumeChartCanvas {
-            display: block;
-            background: #000000;
         }
     </style>
 </head>
@@ -769,21 +898,39 @@
             </div>
         </div>
 
-        <!-- Volume Barplot Panel -->
-        <div class="volume-chart-panel">
-            <div class="volume-chart-header">
-                <div class="volume-chart-title">VOLUME.DISTRIBUTION</div>
-                <div class="volume-chart-info">
-                    <span>LEVELS: <span id="volumeChartLevels">0</span></span>
-                    <span>MAX.VOL: <span id="volumeChartMaxVol">0.000</span></span>
-                    <span>MID: <span id="volumeChartMidPrice">0.00</span></span>
+        <!-- Bottom Area - Split Between Volume Chart and Message Log -->
+        <div class="bottom-panel">
+            <!-- Volume Barplot Panel -->
+            <div class="volume-chart-panel">
+                <div class="volume-chart-header">
+                    <div class="volume-chart-title">VOLUME.DISTRIBUTION</div>
+                    <div class="volume-chart-info">
+                        <span>LEVELS: <span id="volumeChartLevels">0</span></span>
+                        <span>MAX.VOL: <span id="volumeChartMaxVol">0.000</span></span>
+                        <span>MID: <span id="volumeChartMidPrice">0.00</span></span>
+                    </div>
+                </div>
+                <div class="volume-chart-canvas-container">
+                    <canvas id="volumeChartCanvas"></canvas>
+                    <div id="volumeChartLoading" class="loading">
+                        <div>WAITING FOR VOLUME DATA</div>
+                        <div style="font-size: 10px; margin-top: 10px; color: #888;">INITIALIZE SIMULATION</div>
+                    </div>
                 </div>
             </div>
-            <div class="volume-chart-canvas-container">
-                <canvas id="volumeChartCanvas"></canvas>
-                <div id="volumeChartLoading" class="loading">
-                    <div>WAITING FOR VOLUME DATA</div>
-                    <div style="font-size: 10px; margin-top: 10px; color: #888;">INITIALIZE SIMULATION</div>
+
+            <!-- Message Log Panel -->
+            <div class="message-log-panel">
+                <div class="message-log-header">
+                    <div class="message-log-title">MESSAGE.LOG</div>
+                    <div class="message-log-info">
+                        <span>LOG.LEVEL: <span id="logLevel">INFO</span></span>
+                        <span style="margin-left: 10px;">LOG.SIZE: <span id="logSize">0</span></span>
+                        <button onclick="clearMessageLog()" class="btn" style="font-size: 8px; padding: 4px 8px; margin-left: 10px;">CLEAR</button>
+                    </div>
+                </div>
+                <div class="message-log-content">
+                    <div id="logMessages"></div>
                 </div>
             </div>
         </div>
@@ -1917,34 +2064,162 @@
             return errors;
         }
 
-        // L2 order book callback
-        function onL2Update(event) {
-            updateCount++;
-            elements.updateCount.textContent = updateCount;
-            elements.l2UpdateCount.textContent = updateCount;
-            elements.currentSymbol.textContent = event.symbol;
+        // Message log management
+        let messageLog = [];
+        let maxLogSize = 1000;
 
-            // Calculate and display mid price and spread
-            if (event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0) {
-                const midPrice = (event.bids[0].price + event.asks[0].price) / 2;
-                const spread = event.asks[0].price - event.bids[0].price;
+        function addLogMessage(eventType, details, publisherId, topicId, timestamp) {
+            const message = {
+                eventType,
+                details,
+                publisherId,
+                topicId,
+                timestamp,
+                localTime: Date.now()
+            };
+            
+            messageLog.unshift(message); // Add to beginning
+            
+            // Trim log if too large
+            if (messageLog.length > maxLogSize) {
+                messageLog = messageLog.slice(0, maxLogSize);
+            }
+            
+            updateLogDisplay();
+            updateLogStats();
+        }
+
+        function updateLogDisplay() {
+            const logContainer = document.getElementById('logMessages');
+            if (!logContainer) return;
+            
+            // Clear and rebuild (or update efficiently if performance becomes an issue)
+            logContainer.innerHTML = '';
+            
+            // Show only the first 100 messages for performance
+            const visibleMessages = messageLog.slice(0, 100);
+            
+            if (visibleMessages.length === 0) {
+                logContainer.innerHTML = '<div style="color: #666; font-style: italic; padding: 10px;">No messages yet...</div>';
+                return;
+            }
+            
+            visibleMessages.forEach(message => {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'log-message';
+                messageElement.setAttribute('data-event-type', message.eventType);
                 
-                elements.midPrice.textContent = formatPrice(midPrice);
-                elements.spread.textContent = formatPrice(spread);
-            }
+                const timestamp = new Date(message.localTime);
+                const timeStr = timestamp.toLocaleTimeString('en-US', { 
+                    hour12: false, 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit',
+                    fractionalSecondDigits: 3
+                });
+                
+                // Ensure we have valid data
+                const eventType = message.eventType || 'UNKNOWN';
+                const details = message.details || 'No details';
+                const publisherId = message.publisherId || 0;
+                const topicId = message.topicId || 0;
+                
+                messageElement.innerHTML = `
+                    <div class="log-timestamp">${timeStr}</div>
+                    <div class="log-event-type">${eventType}</div>
+                    <div class="log-details">${details}</div>
+                    <div class="log-agent">A${publisherId}:T${topicId}</div>
+                `;
+                
+                logContainer.appendChild(messageElement);
+            });
+        }
 
-            // Update orderbook display with optimized DOM manipulation
-            updateOrderbookDisplay(event.asks, event.bids);
-
-            // Update queue size with throttling
-            if (simulation) {
-                throttledQueueUpdate(simulation.getQueueSize());
+        function updateLogStats() {
+            const logSizeElement = document.getElementById('logSize');
+            if (logSizeElement) {
+                logSizeElement.textContent = messageLog.length;
             }
+        }
 
-            // Forward to heatmap
-            if (heatmapViz) {
-                heatmapViz.onL2Update(event);
+        function clearMessageLog() {
+            messageLog = [];
+            updateLogDisplay();
+            updateLogStats();
+        }
+
+        // Updated unified message callback - handles all event types
+        function onMessageUpdate(event) {
+            // Add debugging to see what we're receiving
+            console.log('[MessageLog] Received event:', event);
+            console.log('[MessageLog] Event type:', typeof event, event);
+            
+            // Handle case where event might be undefined or null
+            if (!event) {
+                console.warn('[MessageLog] Received null or undefined event');
+                return;
             }
+            
+            // Handle L2 orderbook events specially (for backward compatibility)
+            if (event.eventType === 'LTwoOrderBookEvent') {
+                console.log('[MessageLog] Processing L2 event');
+                // Update L2 specific counters and displays
+                updateCount++;
+                elements.updateCount.textContent = updateCount;
+                elements.l2UpdateCount.textContent = updateCount;
+                elements.currentSymbol.textContent = event.symbol || 'UNKNOWN';
+
+                // Calculate and display mid price and spread
+                if (event.bids && event.bids.length > 0 && event.asks && event.asks.length > 0) {
+                    const midPrice = (event.bids[0].price + event.asks[0].price) / 2;
+                    const spread = event.asks[0].price - event.bids[0].price;
+                    
+                    elements.midPrice.textContent = formatPrice(midPrice);
+                    elements.spread.textContent = formatPrice(spread);
+                }
+
+                // Update orderbook display with optimized DOM manipulation
+                if (event.asks && event.bids) {
+                    updateOrderbookDisplay(event.asks, event.bids);
+                }
+
+                // Update queue size with throttling
+                if (simulation) {
+                    throttledQueueUpdate(simulation.getQueueSize());
+                }
+
+                // Forward to heatmap
+                if (heatmapViz) {
+                    heatmapViz.onL2Update(event);
+                }
+
+                // Add to message log with L2-specific details
+                const l2Details = `Symbol: ${event.symbol || 'UNKNOWN'}, Bids: ${event.bids ? event.bids.length : 0}, Asks: ${event.asks ? event.asks.length : 0}`;
+                addLogMessage(
+                    event.eventType || 'LTwoOrderBookEvent', 
+                    l2Details, 
+                    event.publisherId || 0, 
+                    event.topicId || 0, 
+                    event.timestamp || Date.now()
+                );
+            } else {
+                // Handle all other message types
+                console.log('[MessageLog] Processing generic event');
+                const eventType = event.eventType || 'UNKNOWN_EVENT';
+                const details = event.details || 'No details available';
+                const publisherId = event.publisherId || 0;
+                const topicId = event.topicId || 0;
+                const timestamp = event.timestamp || Date.now();
+                
+                console.log('[MessageLog] Event details:', {eventType, details, publisherId, topicId, timestamp});
+                
+                addLogMessage(eventType, details, publisherId, topicId, timestamp);
+            }
+        }
+
+        // Keep the old L2 callback name for backward compatibility
+        function onL2Update(event) {
+            onMessageUpdate(event);
         }
 
         // Optimized orderbook display with DOM element reuse
@@ -2111,8 +2386,10 @@
                 });
 
                 // Set callbacks
-                simulation.setL2Callback(onL2Update);
+                console.log('[System] Setting up callbacks...');
+                simulation.setL2Callback(onMessageUpdate);
                 simulation.setHeatmapCallback(onHeatmapUpdate);
+                console.log('[System] Callbacks set successfully');
 
                 // Heatmap configuration
                 if (simulation.setHeatmapBufferSize) {
@@ -2226,6 +2503,9 @@
             if (isRunning) {
                 stopSimulation();
             }
+            
+            // Clear message log
+            clearMessageLog();
             
             // Reset heatmap visualization
             if (heatmapViz) {
