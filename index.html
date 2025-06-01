@@ -54,10 +54,44 @@
             padding: 25px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
             overflow-y: auto;
+            max-height: calc(100vh - 200px);
         }
 
         .controls-section {
             margin-bottom: 25px;
+        }
+
+        .controls-section.collapsible h3 {
+            cursor: pointer;
+            user-select: none;
+            padding: 10px 15px;
+            margin: -10px -15px 15px -15px;
+            border-radius: 8px;
+            transition: background-color 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .controls-section.collapsible h3:hover {
+            background: #f7fafc;
+        }
+
+        .controls-section.collapsible.collapsed .section-content {
+            display: none;
+        }
+
+        .controls-section.collapsible.collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        .toggle-icon {
+            transition: transform 0.2s;
+            font-size: 0.8rem;
+        }
+
+        .section-content {
+            display: block;
         }
 
         .controls-section h3 {
@@ -309,6 +343,82 @@
                 grid-template-columns: repeat(2, 1fr);
             }
         }
+
+        .btn.small {
+            padding: 6px 12px;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .spread-profile {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .spread-profile-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .spread-profile-title {
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .profile-remove-btn {
+            background: #e53e3e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .profile-remove-btn:hover {
+            background: #c53030;
+        }
+
+        .profile-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .profile-form-group {
+            margin-bottom: 10px;
+        }
+
+        .profile-form-group label {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .profile-form-group input {
+            width: 100%;
+            padding: 6px 8px;
+            border: 1px solid #cbd5e0;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .profile-preview {
+            background: #edf2f7;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-size: 11px;
+            color: #4a5568;
+        }
     </style>
 </head>
 <body>
@@ -328,10 +438,10 @@
         <div id="mainContent" class="main-grid hidden">
             <div class="controls-panel">
                 <div class="controls-section">
-                    <h3>📊 Simulation Parameters</h3>
+                    <h3>📊 Basic Parameters</h3>
                     <div class="form-group">
                         <label for="agents">Number of Agents</label>
-                        <input type="number" id="agents" min="10" max="1000" value="100">
+                        <input type="number" id="agents" min="1" max="1000" value="10">
                     </div>
                     <div class="form-group">
                         <label for="symbol">Trading Symbol</label>
@@ -349,48 +459,162 @@
                     </div>
                 </div>
 
-                <div class="controls-section">
-                    <h3>⏱️ Order Timeouts</h3>
-                    <div class="form-group">
-                        <label for="timeoutDist">Distribution</label>
-                        <select id="timeoutDist">
-                            <option value="lognormal">Log-normal</option>
-                            <option value="pareto">Pareto</option>
-                            <option value="lognormal_pareto_mix">Mixed</option>
-                        </select>
+                <div class="controls-section collapsible">
+                    <h3 onclick="toggleSection(this)">📈 Spread Profiles <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
+                            Spread profiles control how agents choose their bid-ask spreads using Beta distributions. 
+                            <strong>Global Low/High:</strong> min/max spread in basis points. 
+                            <strong>Alpha/Beta Location:</strong> shape parameters for spread center. 
+                            <strong>Alpha/Beta Width:</strong> shape parameters for spread range.
+                        </p>
+                        <div style="margin-bottom: 10px;">
+                            <button type="button" onclick="addPresetProfile('tight')" class="btn btn-secondary small">+ Tight Spreads</button>
+                            <button type="button" onclick="addPresetProfile('wide')" class="btn btn-secondary small">+ Wide Spreads</button>
+                            <button type="button" onclick="addPresetProfile('mixed')" class="btn btn-secondary small">+ Mixed Profile</button>
+                        </div>
+                        <div id="spreadProfiles">
+                            <!-- Dynamic spread profiles will be inserted here -->
+                        </div>
+                        <button type="button" id="addSpreadProfile" class="btn btn-secondary small">+ Custom Profile</button>
                     </div>
-                    <div class="form-row">
+                </div>
+
+                <div class="controls-section collapsible">
+                    <h3 onclick="toggleSection(this)">⏱️ Order Timeouts <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
+                            Configure how long orders stay in the market before expiring. 
+                            <strong>Log-normal:</strong> symmetric distribution. <strong>Pareto:</strong> power-law with long tails. 
+                            <strong>Mixed:</strong> combination of both distributions.
+                        </p>
                         <div class="form-group">
-                            <label for="medianTimeout">Median (s)</label>
-                            <input type="number" id="medianTimeout" min="0.1" max="60" value="5" step="0.1">
+                            <label for="timeoutDist">Distribution</label>
+                            <select id="timeoutDist">
+                                <option value="lognormal">Log-normal</option>
+                                <option value="pareto">Pareto</option>
+                                <option value="lognormal_pareto_mix">Mixed</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="medianTimeout">Median (s)</label>
+                                <input type="number" id="medianTimeout" min="0.1" max="60" value="5" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label for="sigmaTimeout">Sigma</label>
+                                <input type="number" id="sigmaTimeout" min="0.1" max="5" value="0.8" step="0.1">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="paretoAlpha">Pareto Alpha</label>
+                                <input type="number" id="paretoAlpha" min="0.1" max="5" value="1.5" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label for="paretoScale">Pareto Scale</label>
+                                <input type="number" id="paretoScale" min="1" max="100" value="5" step="1">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="tailMix">Tail Mix</label>
+                                <input type="number" id="tailMix" min="0" max="1" value="0.1" step="0.05">
+                            </div>
+                            <div class="form-group">
+                                <label for="minTimeoutS">Min Timeout (s)</label>
+                                <input type="number" id="minTimeoutS" min="0.1" max="60" value="1" step="0.1">
+                            </div>
                         </div>
                         <div class="form-group">
-                            <label for="sigmaTimeout">Sigma</label>
-                            <input type="number" id="sigmaTimeout" min="0.1" max="2" value="0.8" step="0.1">
+                            <label for="maxTimeoutS">Max Timeout (s)</label>
+                            <input type="number" id="maxTimeoutS" min="1" max="3600" value="60" step="1">
                         </div>
                     </div>
                 </div>
 
-                <div class="controls-section">
-                    <h3>💰 Order Sizes</h3>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="minSizeMin">Min Size Range</label>
-                            <input type="number" id="minSizeMin" min="0.001" max="1" value="0.01" step="0.001">
+                <div class="controls-section collapsible">
+                    <h3 onclick="toggleSection(this)">💰 Order Sizes <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
+                            Define the range of order sizes that agents can place. Each agent will randomly choose 
+                            min and max order sizes within these ranges.
+                        </p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="minSizeMin">Min Size Range</label>
+                                <input type="number" id="minSizeMin" min="0.001" max="1" value="0.01" step="0.001">
+                            </div>
+                            <div class="form-group">
+                                <label for="minSizeMax"></label>
+                                <input type="number" id="minSizeMax" min="0.001" max="1" value="0.1" step="0.001">
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="minSizeMax"></label>
-                            <input type="number" id="minSizeMax" min="0.001" max="1" value="0.1" step="0.001">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="maxSizeMin">Max Size Range</label>
+                                <input type="number" id="maxSizeMin" min="0.001" max="10" value="0.1" step="0.001">
+                            </div>
+                            <div class="form-group">
+                                <label for="maxSizeMax"></label>
+                                <input type="number" id="maxSizeMax" min="0.001" max="10" value="0.5" step="0.001">
+                            </div>
                         </div>
                     </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="maxSizeMin">Max Size Range</label>
-                            <input type="number" id="maxSizeMin" min="0.001" max="10" value="0.1" step="0.001">
+                </div>
+
+                <div class="controls-section collapsible">
+                    <h3 onclick="toggleSection(this)">⚖️ Imbalance Parameters <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
+                            Agents adjust their quotes based on order book imbalance. 
+                            <strong>Levels:</strong> how many book levels to consider. 
+                            <strong>Max Adj BPS:</strong> maximum spread adjustment in basis points.
+                        </p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="imbalanceLevelsMin">Levels Range</label>
+                                <input type="number" id="imbalanceLevelsMin" min="1" max="10" value="1" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="imbalanceLevelsMax"></label>
+                                <input type="number" id="imbalanceLevelsMax" min="1" max="10" value="3" step="1">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="maxImbalanceAdjMin">Max Adj BPS Range</label>
+                                <input type="number" id="maxImbalanceAdjMin" min="0" max="100" value="2" step="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="maxImbalanceAdjMax"></label>
+                                <input type="number" id="maxImbalanceAdjMax" min="0" max="100" value="10" step="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="controls-section collapsible">
+                    <h3 onclick="toggleSection(this)">🔧 Advanced Settings <span class="toggle-icon">▼</span></h3>
+                    <div class="section-content">
+                        <p style="font-size: 12px; color: #718096; margin-bottom: 15px;">
+                            Fine-tune simulation behavior. 
+                            <strong>Warmup Range:</strong> time to let each agent settle before adding the next one. 
+                            <strong>Seed Levels:</strong> initial order book depth when simulation starts.
+                        </p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="warmupMin">Warmup Range (ms)</label>
+                                <input type="number" id="warmupMin" min="0" max="5000" value="0" step="10">
+                            </div>
+                            <div class="form-group">
+                                <label for="warmupMax"></label>
+                                <input type="number" id="warmupMax" min="0" max="5000" value="0" step="10">
+                            </div>
                         </div>
                         <div class="form-group">
-                            <label for="maxSizeMax"></label>
-                            <input type="number" id="maxSizeMax" min="0.001" max="10" value="0.5" step="0.001">
+                            <label for="seedLevels">Order Book Seed Levels</label>
+                            <input type="number" id="seedLevels" min="1" max="20" value="5" step="1">
                         </div>
                     </div>
                 </div>
@@ -399,6 +623,9 @@
                     <button id="initBtn" class="btn btn-primary">Initialize</button>
                     <button id="startBtn" class="btn btn-secondary" disabled>Start</button>
                     <button id="stopBtn" class="btn btn-danger" disabled>Stop</button>
+                </div>
+                <div class="button-group" style="margin-top: 10px;">
+                    <button id="resetBtn" class="btn btn-secondary" onclick="resetToDefaults()">🔄 Reset to Defaults</button>
                 </div>
             </div>
 
@@ -458,6 +685,7 @@
         let isRunning = false;
         let updateCount = 0;
         let lastLoggedQueueSize = 0;
+        let spreadProfileCounter = 0;
 
         // DOM elements
         const elements = {
@@ -475,8 +703,259 @@
             noData: document.getElementById('noData'),
             orderbook: document.getElementById('orderbook'),
             askLevels: document.getElementById('askLevels'),
-            bidLevels: document.getElementById('bidLevels')
+            bidLevels: document.getElementById('bidLevels'),
+            spreadProfiles: document.getElementById('spreadProfiles'),
+            addSpreadProfile: document.getElementById('addSpreadProfile')
         };
+
+        // Collapsible section functionality
+        function toggleSection(header) {
+            const section = header.parentElement;
+            section.classList.toggle('collapsed');
+        }
+
+        // Spread profile management
+        function createSpreadProfile(profile = null) {
+            const profileId = `profile_${++spreadProfileCounter}`;
+            const defaultProfile = profile || {
+                global_low: 1,
+                global_high: 10,
+                alpha_loc: 1.0,
+                beta_loc: 1.0,
+                alpha_wid: 1.0,
+                beta_wid: 1.0,
+                weight: 1.0
+            };
+
+            const profileHtml = `
+                <div class="spread-profile" id="${profileId}">
+                    <div class="spread-profile-header">
+                        <div class="spread-profile-title">Profile ${spreadProfileCounter}</div>
+                        <button class="profile-remove-btn" onclick="removeSpreadProfile('${profileId}')">×</button>
+                    </div>
+                    <div class="profile-grid">
+                        <div class="profile-form-group">
+                            <label>Global Low (BPS)</label>
+                            <input type="number" name="global_low" value="${defaultProfile.global_low}" min="1" max="1000" step="1">
+                        </div>
+                        <div class="profile-form-group">
+                            <label>Global High (BPS)</label>
+                            <input type="number" name="global_high" value="${defaultProfile.global_high}" min="1" max="1000" step="1">
+                        </div>
+                        <div class="profile-form-group">
+                            <label>Alpha Location</label>
+                            <input type="number" name="alpha_loc" value="${defaultProfile.alpha_loc}" min="0.1" max="10" step="0.1">
+                        </div>
+                        <div class="profile-form-group">
+                            <label>Beta Location</label>
+                            <input type="number" name="beta_loc" value="${defaultProfile.beta_loc}" min="0.1" max="10" step="0.1">
+                        </div>
+                        <div class="profile-form-group">
+                            <label>Alpha Width</label>
+                            <input type="number" name="alpha_wid" value="${defaultProfile.alpha_wid}" min="0.1" max="10" step="0.1">
+                        </div>
+                        <div class="profile-form-group">
+                            <label>Beta Width</label>
+                            <input type="number" name="beta_wid" value="${defaultProfile.beta_wid}" min="0.1" max="10" step="0.1">
+                        </div>
+                    </div>
+                    <div class="profile-form-group">
+                        <label>Weight</label>
+                        <input type="number" name="weight" value="${defaultProfile.weight}" min="0.1" max="10" step="0.1">
+                    </div>
+                    <div class="profile-preview">
+                        Spread: ${defaultProfile.global_low}-${defaultProfile.global_high} BPS, 
+                        Location: α=${defaultProfile.alpha_loc} β=${defaultProfile.beta_loc}, 
+                        Width: α=${defaultProfile.alpha_wid} β=${defaultProfile.beta_wid}, 
+                        Weight: ${defaultProfile.weight}
+                    </div>
+                </div>
+            `;
+
+            elements.spreadProfiles.insertAdjacentHTML('beforeend', profileHtml);
+            updateProfilePreview(profileId);
+            
+            // Add event listeners for live preview updates
+            const profileElement = document.getElementById(profileId);
+            const inputs = profileElement.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.addEventListener('input', () => updateProfilePreview(profileId));
+            });
+        }
+
+        function removeSpreadProfile(profileId) {
+            const profile = document.getElementById(profileId);
+            if (profile) {
+                profile.remove();
+            }
+        }
+
+        function updateProfilePreview(profileId) {
+            const profile = document.getElementById(profileId);
+            const inputs = profile.querySelectorAll('input');
+            const values = {};
+            inputs.forEach(input => {
+                values[input.name] = parseFloat(input.value);
+            });
+
+            const preview = profile.querySelector('.profile-preview');
+            preview.textContent = `Spread: ${values.global_low}-${values.global_high} BPS, ` +
+                                  `Location: α=${values.alpha_loc} β=${values.beta_loc}, ` +
+                                  `Width: α=${values.alpha_wid} β=${values.beta_wid}, ` +
+                                  `Weight: ${values.weight}`;
+        }
+
+        function getSpreadProfiles() {
+            const profiles = [];
+            const profileElements = elements.spreadProfiles.querySelectorAll('.spread-profile');
+            
+            profileElements.forEach(profileElement => {
+                const inputs = profileElement.querySelectorAll('input');
+                const profile = {};
+                inputs.forEach(input => {
+                    profile[input.name] = parseFloat(input.value);
+                });
+                profiles.push(profile);
+            });
+            
+            return profiles;
+        }
+
+        // Input validation
+        function validateInputs() {
+            const errors = [];
+            
+            // Basic parameter validation
+            const agents = parseInt(document.getElementById('agents').value);
+            if (agents < 1 || agents > 1000) {
+                errors.push('Number of agents must be between 1 and 1000');
+            }
+            
+            // Order size validation
+            const minSizeMin = parseFloat(document.getElementById('minSizeMin').value);
+            const minSizeMax = parseFloat(document.getElementById('minSizeMax').value);
+            const maxSizeMin = parseFloat(document.getElementById('maxSizeMin').value);
+            const maxSizeMax = parseFloat(document.getElementById('maxSizeMax').value);
+            
+            if (minSizeMin >= minSizeMax) {
+                errors.push('Min size range: first value must be less than second value');
+            }
+            if (maxSizeMin >= maxSizeMax) {
+                errors.push('Max size range: first value must be less than second value');
+            }
+            if (minSizeMax > maxSizeMin) {
+                errors.push('Min size max should not exceed max size min');
+            }
+            
+            // Timeout validation
+            const minTimeout = parseFloat(document.getElementById('minTimeoutS').value);
+            const maxTimeout = parseFloat(document.getElementById('maxTimeoutS').value);
+            if (minTimeout >= maxTimeout) {
+                errors.push('Min timeout must be less than max timeout');
+            }
+            
+            // Imbalance validation
+            const imbalanceLevelsMin = parseInt(document.getElementById('imbalanceLevelsMin').value);
+            const imbalanceLevelsMax = parseInt(document.getElementById('imbalanceLevelsMax').value);
+            if (imbalanceLevelsMin > imbalanceLevelsMax) {
+                errors.push('Imbalance levels: min must be ≤ max');
+            }
+            
+            const maxImbalanceAdjMin = parseInt(document.getElementById('maxImbalanceAdjMin').value);
+            const maxImbalanceAdjMax = parseInt(document.getElementById('maxImbalanceAdjMax').value);
+            if (maxImbalanceAdjMin > maxImbalanceAdjMax) {
+                errors.push('Max imbalance adjustment: min must be ≤ max');
+            }
+            
+            // Warmup validation
+            const warmupMin = parseInt(document.getElementById('warmupMin').value);
+            const warmupMax = parseInt(document.getElementById('warmupMax').value);
+            if (warmupMin > warmupMax) {
+                errors.push('Warmup range: min must be ≤ max');
+            }
+            
+            // Spread profile validation
+            const profiles = getSpreadProfiles();
+            if (profiles.length === 0) {
+                errors.push('At least one spread profile is required');
+            }
+            
+            profiles.forEach((profile, index) => {
+                if (profile.global_low >= profile.global_high) {
+                    errors.push(`Spread profile ${index + 1}: Global low must be less than global high`);
+                }
+                if (profile.weight <= 0) {
+                    errors.push(`Spread profile ${index + 1}: Weight must be positive`);
+                }
+            });
+            
+            return errors;
+        }
+
+        // Preset spread profiles
+        function addPresetProfile(preset) {
+            const presets = {
+                'tight': { global_low: 1, global_high: 3, alpha_loc: 0.5, beta_loc: 4.0, alpha_wid: 0.8, beta_wid: 8.0, weight: 1.0 },
+                'wide': { global_low: 20, global_high: 50, alpha_loc: 4.0, beta_loc: 0.5, alpha_wid: 8.0, beta_wid: 0.8, weight: 1.0 },
+                'mixed': { global_low: 5, global_high: 15, alpha_loc: 1.5, beta_loc: 1.5, alpha_wid: 2.0, beta_wid: 2.0, weight: 1.0 }
+            };
+            
+            if (presets[preset]) {
+                createSpreadProfile(presets[preset]);
+            }
+        }
+
+        // Reset to default values
+        function resetToDefaults() {
+            // Basic parameters
+            document.getElementById('agents').value = 10;
+            document.getElementById('symbol').value = 'BTC/USD';
+            document.getElementById('seed').value = 47;
+            document.getElementById('speedFactor').value = 100;
+            
+            // Order timeout parameters
+            document.getElementById('timeoutDist').value = 'lognormal';
+            document.getElementById('medianTimeout').value = 5;
+            document.getElementById('sigmaTimeout').value = 0.8;
+            document.getElementById('paretoAlpha').value = 1.5;
+            document.getElementById('paretoScale').value = 5;
+            document.getElementById('tailMix').value = 0.1;
+            document.getElementById('minTimeoutS').value = 1;
+            document.getElementById('maxTimeoutS').value = 60;
+            
+            // Order size parameters
+            document.getElementById('minSizeMin').value = 0.01;
+            document.getElementById('minSizeMax').value = 0.1;
+            document.getElementById('maxSizeMin').value = 0.1;
+            document.getElementById('maxSizeMax').value = 0.5;
+            
+            // Imbalance parameters
+            document.getElementById('imbalanceLevelsMin').value = 1;
+            document.getElementById('imbalanceLevelsMax').value = 3;
+            document.getElementById('maxImbalanceAdjMin').value = 2;
+            document.getElementById('maxImbalanceAdjMax').value = 10;
+            
+            // Advanced settings
+            document.getElementById('warmupMin').value = 0;
+            document.getElementById('warmupMax').value = 0;
+            document.getElementById('seedLevels').value = 5;
+            
+            // Reset spread profiles to defaults
+            initializeDefaultSpreadProfiles();
+            
+            console.log('[JavaScript] Settings reset to defaults');
+        }
+
+        // Initialize default spread profiles
+        function initializeDefaultSpreadProfiles() {
+            // Clear existing profiles
+            elements.spreadProfiles.innerHTML = '';
+            spreadProfileCounter = 0;
+            
+            // Add default profiles
+            createSpreadProfile({ global_low: 1, global_high: 5, alpha_loc: 0.7, beta_loc: 3.0, alpha_wid: 1.0, beta_wid: 6.0, weight: 0.5 });
+            createSpreadProfile({ global_low: 50, global_high: 100, alpha_loc: 3.0, beta_loc: 0.7, alpha_wid: 6.0, beta_wid: 1.0, weight: 0.5 });
+        }
 
         // Error handling
         function showError(message) {
@@ -555,6 +1034,13 @@
                 return;
             }
 
+            // Validate inputs first
+            const validationErrors = validateInputs();
+            if (validationErrors.length > 0) {
+                showError('Validation errors:\n• ' + validationErrors.join('\n• '));
+                return;
+            }
+
             try {
                 // Create new simulation instance
                 if (simulation) {
@@ -565,7 +1051,7 @@
                 console.log('[JavaScript] Creating new ExchangeSimulation instance');
                 simulation = new Module.ExchangeSimulation();
 
-                // Configure simulation with form values
+                // Configure basic parameters
                 const agentCount = parseInt(document.getElementById('agents').value);
                 const symbol = document.getElementById('symbol').value;
                 console.log('[JavaScript] Configuring simulation: agents=' + agentCount + ', symbol=' + symbol);
@@ -574,16 +1060,55 @@
                 simulation.setSymbol(symbol);
                 simulation.setSeed(parseInt(document.getElementById('seed').value));
                 simulation.setSpeedFactor(parseFloat(document.getElementById('speedFactor').value));
+
+                // Configure order timeout parameters
                 simulation.setTimeoutDistribution(document.getElementById('timeoutDist').value);
                 simulation.setMedianTimeoutSeconds(parseFloat(document.getElementById('medianTimeout').value));
                 simulation.setSigmaTimeout(parseFloat(document.getElementById('sigmaTimeout').value));
+                simulation.setParetoAlpha(parseFloat(document.getElementById('paretoAlpha').value));
+                simulation.setParetoScale(parseFloat(document.getElementById('paretoScale').value));
+                simulation.setTailMix(parseFloat(document.getElementById('tailMix').value));
+                simulation.setMinTimeoutS(parseFloat(document.getElementById('minTimeoutS').value));
+                simulation.setMaxTimeoutS(parseFloat(document.getElementById('maxTimeoutS').value));
 
-                // Set order size ranges
+                // Configure order size ranges
                 const minSizeMin = parseFloat(document.getElementById('minSizeMin').value);
                 const minSizeMax = parseFloat(document.getElementById('minSizeMax').value);
                 const maxSizeMin = parseFloat(document.getElementById('maxSizeMin').value);
                 const maxSizeMax = parseFloat(document.getElementById('maxSizeMax').value);
                 simulation.setOrderSizeRanges(minSizeMin, minSizeMax, maxSizeMin, maxSizeMax);
+
+                // Configure imbalance parameters
+                const imbalanceLevelsMin = parseInt(document.getElementById('imbalanceLevelsMin').value);
+                const imbalanceLevelsMax = parseInt(document.getElementById('imbalanceLevelsMax').value);
+                const maxImbalanceAdjMin = parseInt(document.getElementById('maxImbalanceAdjMin').value);
+                const maxImbalanceAdjMax = parseInt(document.getElementById('maxImbalanceAdjMax').value);
+                simulation.setImbalanceParams(imbalanceLevelsMin, imbalanceLevelsMax, maxImbalanceAdjMin, maxImbalanceAdjMax);
+
+                // Configure advanced settings
+                const warmupMin = parseInt(document.getElementById('warmupMin').value);
+                const warmupMax = parseInt(document.getElementById('warmupMax').value);
+                simulation.setWarmupRangeMs(warmupMin, warmupMax);
+                simulation.setOrderBookSeedLevels(parseInt(document.getElementById('seedLevels').value));
+
+                // Configure spread profiles
+                console.log('[JavaScript] Configuring spread profiles...');
+                const spreadProfiles = getSpreadProfiles();
+                console.log('[JavaScript] Found ' + spreadProfiles.length + ' spread profiles');
+                
+                simulation.clearSpreadProfiles();
+                spreadProfiles.forEach((profile, index) => {
+                    console.log('[JavaScript] Adding spread profile ' + (index + 1) + ':', profile);
+                    simulation.addSpreadProfile(
+                        profile.global_low,
+                        profile.global_high,
+                        profile.alpha_loc,
+                        profile.beta_loc,
+                        profile.alpha_wid,
+                        profile.beta_wid,
+                        profile.weight
+                    );
+                });
 
                 // Set L2 callback
                 console.log('[JavaScript] Setting L2 callback...');
@@ -686,6 +1211,7 @@
         elements.initBtn.addEventListener('click', initializeSimulation);
         elements.startBtn.addEventListener('click', startSimulation);
         elements.stopBtn.addEventListener('click', stopSimulation);
+        elements.addSpreadProfile.addEventListener('click', () => createSpreadProfile());
 
         // Load WebAssembly module
         function loadModule() {
@@ -699,6 +1225,10 @@
                 elements.loading.classList.add('hidden');
                 elements.mainContent.classList.remove('hidden');
                 updateStatus('Ready');
+                
+                // Initialize default spread profiles
+                initializeDefaultSpreadProfiles();
+                
                 console.log('WebAssembly module loaded successfully');
             }).catch(error => {
                 showError(`Failed to load WebAssembly module: ${error.message}`);

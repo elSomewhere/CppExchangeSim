@@ -249,11 +249,13 @@ public:
         stop();
     }
 
-    // Configuration methods
+    // Configuration methods - Basic parameters
     void set_agents(int agents) { params_.agents = agents; }
     void set_symbol(const std::string& symbol) { params_.symbol = symbol; }
     void set_seed(int seed) { params_.seed = seed; }
     void set_speed_factor(double speed_factor) { params_.speed_factor = speed_factor; }
+    
+    // Order timeout parameters  
     void set_timeout_distribution(const std::string& dist) { params_.timeout_dist = dist; }
     void set_median_timeout_seconds(double seconds) { params_.median_timeout_seconds = seconds; }
     void set_sigma_timeout(double sigma) { params_.sigma_timeout = sigma; }
@@ -262,17 +264,23 @@ public:
     void set_tail_mix(double mix) { params_.tail_mix = mix; }
     void set_min_timeout_s(double min_s) { params_.min_timeout_s = min_s; }
     void set_max_timeout_s(double max_s) { params_.max_timeout_s = max_s; }
+    
+    // Warmup and seeding parameters
     void set_warmup_range_ms(int min_ms, int max_ms) { 
         params_.warmup_per_agent_ms_min = min_ms; 
         params_.warmup_per_agent_ms_max = max_ms; 
     }
     void set_order_book_seed_levels(int levels) { params_.order_book_seed_levels = levels; }
+    
+    // Order size parameters
     void set_order_size_ranges(double min_min, double min_max, double max_min, double max_max) {
         params_.min_order_size_min = min_min;
         params_.min_order_size_max = min_max;
         params_.max_order_size_min = max_min;
         params_.max_order_size_max = max_max;
     }
+    
+    // Imbalance parameters
     void set_imbalance_params(int levels_min, int levels_max, int adj_min, int adj_max) {
         params_.imbalance_levels_min = levels_min;
         params_.imbalance_levels_max = levels_max;
@@ -445,10 +453,12 @@ public:
 EMSCRIPTEN_BINDINGS(exchange_simulation) {
     emscripten::class_<ExchangeSimulation>("ExchangeSimulation")
         .constructor<>()
+        // Basic parameters
         .function("setAgents", &ExchangeSimulation::set_agents)
         .function("setSymbol", &ExchangeSimulation::set_symbol)
         .function("setSeed", &ExchangeSimulation::set_seed)
         .function("setSpeedFactor", &ExchangeSimulation::set_speed_factor)
+        // Order timeout parameters
         .function("setTimeoutDistribution", &ExchangeSimulation::set_timeout_distribution)
         .function("setMedianTimeoutSeconds", &ExchangeSimulation::set_median_timeout_seconds)
         .function("setSigmaTimeout", &ExchangeSimulation::set_sigma_timeout)
@@ -457,17 +467,23 @@ EMSCRIPTEN_BINDINGS(exchange_simulation) {
         .function("setTailMix", &ExchangeSimulation::set_tail_mix)
         .function("setMinTimeoutS", &ExchangeSimulation::set_min_timeout_s)
         .function("setMaxTimeoutS", &ExchangeSimulation::set_max_timeout_s)
+        // Warmup and seeding parameters
         .function("setWarmupRangeMs", &ExchangeSimulation::set_warmup_range_ms)
         .function("setOrderBookSeedLevels", &ExchangeSimulation::set_order_book_seed_levels)
+        // Order size parameters
         .function("setOrderSizeRanges", &ExchangeSimulation::set_order_size_ranges)
+        // Imbalance parameters
         .function("setImbalanceParams", &ExchangeSimulation::set_imbalance_params)
+        // Spread profile management
         .function("clearSpreadProfiles", &ExchangeSimulation::clear_spread_profiles)
         .function("addSpreadProfile", &ExchangeSimulation::add_spread_profile)
+        // L2 callback and control
         .function("setL2Callback", &ExchangeSimulation::set_l2_callback)
         .function("initialize", &ExchangeSimulation::initialize)
         .function("start", &ExchangeSimulation::start)
         .function("stop", &ExchangeSimulation::stop)
         .function("cleanup", &ExchangeSimulation::cleanup)
+        // Status getters
         .function("isRunning", &ExchangeSimulation::is_running)
         .function("isInitialized", &ExchangeSimulation::is_initialized)
         .function("getQueueSize", &ExchangeSimulation::get_queue_size);
