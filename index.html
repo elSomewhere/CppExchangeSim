@@ -23,16 +23,16 @@
 
         /* Grid-based layout system */
         .system-container {
-            width: 100vw;
-            height: 100vh;
             display: grid;
-            grid-template-rows: 60px 3fr 2fr 40px;
             grid-template-areas: 
-                "header"
-                "main"
-                "bottom"
-                "status";
-            overflow: hidden;
+                "header header header"
+                "main main main"
+                "bottom bottom bottom" 
+                "status status status";
+            grid-template-rows: 60px 1fr 1fr 40px;
+            grid-template-columns: 1fr;
+            height: 100vh;
+            min-height: 600px;
         }
 
         /* Header - clean, technical */
@@ -54,6 +54,64 @@
         }
 
         .system-controls {
+            display: flex;
+            gap: 1px;
+            align-items: center;
+        }
+
+        /* Speed control slider */
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-right: 20px;
+            padding: 8px 12px;
+            border: 1px solid #333333;
+            background: #000000;
+        }
+
+        .speed-label {
+            font-size: 9px;
+            color: #cccccc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            min-width: 50px;
+        }
+
+        .speed-slider {
+            width: 120px;
+            height: 4px;
+            background: #333333;
+            outline: none;
+            appearance: none;
+            cursor: pointer;
+        }
+
+        .speed-slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #ffffff;
+            cursor: pointer;
+        }
+
+        .speed-slider::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: #ffffff;
+            cursor: pointer;
+            border: none;
+        }
+
+        .speed-value {
+            font-size: 9px;
+            color: #ffffff;
+            font-weight: bold;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .control-buttons {
             display: flex;
             gap: 1px;
         }
@@ -409,6 +467,7 @@
             background: #000000;
             border-top: 1px solid #333333;
             border-bottom: 1px solid #333333;
+            min-height: 300px;
         }
 
         /* Volume barplot panel */
@@ -417,6 +476,7 @@
             border-right: 1px solid #333333;
             display: flex;
             flex-direction: column;
+            min-height: 300px;
         }
 
         .volume-chart-header {
@@ -458,6 +518,7 @@
             background: #000000;
             display: flex;
             flex-direction: column;
+            min-height: 300px;
         }
 
         .message-log-header {
@@ -495,6 +556,7 @@
             font-family: 'Courier New', monospace;
             font-size: 9px;
             line-height: 1.3;
+            max-height: 250px;
         }
 
         .log-message {
@@ -573,12 +635,13 @@
 
         @media (max-width: 1024px) {
             .system-container {
-                grid-template-rows: 60px 2fr 1fr 40px;
+                grid-template-rows: 60px 1fr 1fr 40px;
+                min-height: 700px;
             }
             
             .main-content {
                 grid-template-columns: 1fr;
-                grid-template-rows: 300px 1fr;
+                grid-template-rows: 1fr;
             }
             
             .controls-panel {
@@ -589,30 +652,34 @@
             .heatmap-panel {
                 border-right: none;
             }
-
+            
             .bottom-panel {
-                grid-template-columns: 1fr;
-                grid-template-rows: 1fr 1fr;
+                min-height: 350px;
             }
-
-            .volume-chart-panel {
-                border-right: none;
-                border-bottom: 1px solid #333333;
+            
+            .volume-chart-panel,
+            .message-log-panel {
+                min-height: 350px;
             }
         }
 
-        @media (max-width: 768px) {
+        @media (max-height: 768px) {
             .system-container {
-                grid-template-rows: 60px 5fr 3fr 40px;
+                grid-template-rows: 50px 1fr 1fr 35px;
+                min-height: 600px;
             }
             
-            .volume-chart-header {
-                padding: 8px 12px;
-                height: 35px;
+            .bottom-panel {
+                min-height: 250px;
             }
             
-            .volume-chart-title, .volume-chart-info {
-                font-size: 10px;
+            .volume-chart-panel,
+            .message-log-panel {
+                min-height: 250px;
+            }
+            
+            .message-log-content {
+                max-height: 200px;
             }
         }
 
@@ -658,10 +725,17 @@
         <div class="system-header">
             <div class="system-title">EXCHANGE.SIMULATION.SYSTEM</div>
             <div class="system-controls">
-                <button id="initBtn" class="btn">INIT</button>
-                <button id="startBtn" class="btn" disabled>START</button>
-                <button id="stopBtn" class="btn" disabled>STOP</button>
-                <button id="resetBtn" class="btn">RESET</button>
+                <div class="speed-control">
+                    <div class="speed-label">SPEED</div>
+                    <input type="range" id="speedSlider" class="speed-slider" min="1" max="1000" value="100">
+                    <div class="speed-value">100</div>
+                </div>
+                <div class="control-buttons">
+                    <button id="initBtn" class="btn">INIT</button>
+                    <button id="startBtn" class="btn" disabled>START</button>
+                    <button id="stopBtn" class="btn" disabled>STOP</button>
+                    <button id="resetBtn" class="btn">RESET</button>
+                </div>
             </div>
         </div>
 
@@ -1889,26 +1963,38 @@
         let updateCount = 0;
         let spreadProfileCounter = 0;
 
-        // Performance optimization - cached DOM elements and formatters
+        // DOM element references
         const elements = {
+            // Buttons
             initBtn: document.getElementById('initBtn'),
             startBtn: document.getElementById('startBtn'),
             stopBtn: document.getElementById('stopBtn'),
             resetBtn: document.getElementById('resetBtn'),
+            addSpreadProfile: document.getElementById('addSpreadProfile'),
+            
+            // Speed control
+            speedSlider: document.getElementById('speedSlider'),
+            speedValue: document.querySelector('.speed-value'),
+            
+            // Status elements
             simStatus: document.getElementById('simStatus'),
-            queueSize: document.getElementById('queueSize'),
             updateCount: document.getElementById('updateCount'),
-            currentSymbol: document.getElementById('currentSymbol'),
             l2UpdateCount: document.getElementById('l2UpdateCount'),
+            queueSize: document.getElementById('queueSize'),
             midPrice: document.getElementById('midPrice'),
             spread: document.getElementById('spread'),
             activeAgents: document.getElementById('activeAgents'),
+            currentSymbol: document.getElementById('currentSymbol'),
+            
+            // Error elements
+            error: document.getElementById('error'),
+            errorMessage: document.getElementById('errorMessage'),
+            
+            // Containers
             spreadProfiles: document.getElementById('spreadProfiles'),
-            addSpreadProfile: document.getElementById('addSpreadProfile'),
             askLevels: document.getElementById('askLevels'),
             bidLevels: document.getElementById('bidLevels'),
-            error: document.getElementById('error'),
-            errorMessage: document.getElementById('errorMessage')
+            messageLog: document.getElementById('messageLog')
         };
 
         // Optimized number formatting with caching
@@ -2424,6 +2510,8 @@
 
             try {
                 updateStatus('STARTING');
+                
+                // Start the simulation (just sets a flag, no timing logic)
                 const success = simulation.start();
                 
                 if (success) {
@@ -2443,27 +2531,9 @@
                         volumeChart.startVisualization();
                     }
                     
-                    // Optimized monitoring with less frequent polling
-                    let lastQueueSize = -1;
-                    const monitor = setInterval(() => {
-                        if (!isRunning) {
-                            clearInterval(monitor);
-                            return;
-                        }
-                        
-                        const queueSize = simulation.getQueueSize();
-                        
-                        // Only update if queue size changed
-                        if (queueSize !== lastQueueSize) {
-                            throttledQueueUpdate(queueSize);
-                            lastQueueSize = queueSize;
-                        }
-                        
-                        if (queueSize === 0) {
-                            stopSimulation();
-                            updateStatus('COMPLETE');
-                        }
-                    }, 250); // Reduced from 100ms to 250ms
+                    // Start JavaScript-based timing control
+                    startTimingLoop();
+                    
                 } else {
                     throw new Error('Failed to start simulation');
                 }
@@ -2473,14 +2543,152 @@
             }
         }
 
+        // JavaScript-based timing control
+        let timingLoopActive = false;
+        let lastRealTime = 0;
+        let lastSimTime = 0;
+        let isPaused = false;
+        
+        // Dynamic speed control
+        function getCurrentSpeedFactor() {
+            return parseFloat(elements.speedSlider.value);
+        }
+        
+        function updateSpeedDisplay() {
+            const speed = getCurrentSpeedFactor();
+            elements.speedValue.textContent = speed.toString();
+        }
+        
+        function startTimingLoop() {
+            if (timingLoopActive) return;
+            
+            timingLoopActive = true;
+            isPaused = false;
+            lastRealTime = performance.now();
+            lastSimTime = simulation.getCurrentSimulationTime();
+            
+            console.log(`[TimingLoop] Starting with initial speed factor: ${getCurrentSpeedFactor()}`);
+            
+            // Use requestAnimationFrame for smooth timing
+            processEventsLoop();
+            
+            // Also start monitoring loop for UI updates
+            startMonitoringLoop();
+        }
+        
+        function pauseSimulation() {
+            isPaused = true;
+            updateStatus('PAUSED');
+            elements.startBtn.textContent = 'RESUME';
+            elements.startBtn.disabled = false;
+            console.log('[TimingLoop] Paused');
+        }
+        
+        function resumeSimulation() {
+            if (!timingLoopActive) return;
+            isPaused = false;
+            updateStatus('RUNNING');
+            elements.startBtn.textContent = 'START';
+            elements.startBtn.disabled = true;
+            lastRealTime = performance.now(); // Reset timing to prevent time jump
+            console.log('[TimingLoop] Resumed');
+        }
+        
+        function processEventsLoop() {
+            if (!timingLoopActive || !isRunning) {
+                console.log('[TimingLoop] Stopping timing loop');
+                return;
+            }
+            
+            if (!simulation.hasEvents()) {
+                console.log('[TimingLoop] No more events, stopping simulation');
+                stopSimulation();
+                updateStatus('COMPLETE');
+                return;
+            }
+            
+            // Skip processing if paused, but keep the loop running
+            if (!isPaused) {
+                const currentRealTime = performance.now();
+                const realTimeDelta = currentRealTime - lastRealTime;
+                
+                // Get current speed factor (can change dynamically)
+                const speedFactor = getCurrentSpeedFactor();
+                
+                // Calculate how much simulation time should have passed
+                const simTimeAdvance = realTimeDelta * 1000 * speedFactor; // Convert to microseconds and apply speed factor
+                const targetSimTime = lastSimTime + simTimeAdvance;
+                
+                // Process events until we reach the target simulation time
+                let eventsProcessed = 0;
+                const maxEventsPerFrame = Math.max(10, Math.min(200, speedFactor / 5)); // Scale batch size with speed
+                
+                while (eventsProcessed < maxEventsPerFrame && simulation.hasEvents() && !isPaused) {
+                    const nextEventTime = simulation.peekNextEventTime();
+                    
+                    if (nextEventTime < 0) break; // No events
+                    
+                    if (nextEventTime > targetSimTime) {
+                        // Next event is in the future, wait for next frame
+                        break;
+                    }
+                    
+                    // Process the event
+                    const eventProcessed = simulation.step();
+                    if (eventProcessed) {
+                        eventsProcessed++;
+                    } else {
+                        break; // No event was processed
+                    }
+                }
+                
+                // Update timing state
+                lastRealTime = currentRealTime;
+                lastSimTime = simulation.getCurrentSimulationTime();
+            }
+            
+            // Schedule next frame
+            requestAnimationFrame(processEventsLoop);
+        }
+        
+        function startMonitoringLoop() {
+            let lastQueueSize = -1;
+            
+            const monitor = setInterval(() => {
+                if (!isRunning || !timingLoopActive) {
+                    clearInterval(monitor);
+                    return;
+                }
+                
+                const queueSize = simulation.getQueueSize();
+                
+                // Only update if queue size changed
+                if (queueSize !== lastQueueSize) {
+                    throttledQueueUpdate(queueSize);
+                    lastQueueSize = queueSize;
+                }
+                
+                if (queueSize === 0) {
+                    stopSimulation();
+                    updateStatus('COMPLETE');
+                }
+            }, 250); // Check every 250ms
+        }
+
         function stopSimulation() {
             if (!isRunning) return;
 
             try {
+                // Stop the JavaScript timing loop
+                timingLoopActive = false;
+                isPaused = false;
+                
+                // Stop the simulation
                 simulation.stop();
                 isRunning = false;
                 updateStatus('STOPPED');
                 elements.startBtn.disabled = false;
+                elements.startBtn.textContent = 'START';
                 elements.stopBtn.disabled = true;
                 elements.initBtn.disabled = false;
                 
@@ -2547,6 +2755,10 @@
             document.getElementById('symbol').value = 'BTC/USD';
             document.getElementById('seed').value = 47;
             document.getElementById('speedFactor').value = 100;
+            
+            // Reset speed slider
+            elements.speedSlider.value = 100;
+            updateSpeedDisplay();
             
             document.getElementById('timeoutDist').value = 'lognormal';
             document.getElementById('medianTimeout').value = 5;
@@ -2624,10 +2836,25 @@
 
         // Event listeners
         elements.initBtn.addEventListener('click', initializeSimulation);
-        elements.startBtn.addEventListener('click', startSimulation);
+        elements.startBtn.addEventListener('click', () => {
+            if (!isRunning) {
+                startSimulation();
+            } else if (isPaused) {
+                resumeSimulation();
+            } else {
+                pauseSimulation();
+            }
+        });
         elements.stopBtn.addEventListener('click', stopSimulation);
         elements.resetBtn.addEventListener('click', resetToDefaults);
         elements.addSpreadProfile.addEventListener('click', () => createSpreadProfile());
+
+        // Speed control event listeners
+        elements.speedSlider.addEventListener('input', updateSpeedDisplay);
+        elements.speedSlider.addEventListener('change', updateSpeedDisplay);
+        
+        // Initialize speed display
+        updateSpeedDisplay();
 
         // Initialize system
         function loadModule() {
@@ -2719,7 +2946,17 @@
                 case 'Space':
                     e.preventDefault();
                     if (isInitialized && !isRunning) startSimulation();
-                    else if (isRunning) stopSimulation();
+                    else if (isRunning && !isPaused) pauseSimulation();
+                    else if (isRunning && isPaused) resumeSimulation();
+                    break;
+                case 'KeyP':
+                    e.preventDefault();
+                    if (isRunning && !isPaused) pauseSimulation();
+                    else if (isRunning && isPaused) resumeSimulation();
+                    break;
+                case 'KeyS':
+                    e.preventDefault();
+                    if (isRunning) stopSimulation();
                     break;
                 case 'KeyR':
                     if (e.ctrlKey || e.metaKey) return;
@@ -2728,6 +2965,24 @@
                     break;
                 case 'Escape':
                     if (isRunning) stopSimulation();
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        elements.speedSlider.value = Math.min(1000, parseFloat(elements.speedSlider.value) + 50);
+                    } else {
+                        elements.speedSlider.value = Math.min(1000, parseFloat(elements.speedSlider.value) + 10);
+                    }
+                    updateSpeedDisplay();
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        elements.speedSlider.value = Math.max(1, parseFloat(elements.speedSlider.value) - 50);
+                    } else {
+                        elements.speedSlider.value = Math.max(1, parseFloat(elements.speedSlider.value) - 10);
+                    }
+                    updateSpeedDisplay();
                     break;
             }
         });

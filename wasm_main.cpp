@@ -26,7 +26,6 @@
 #include "src/EventBus.h"
 #include "src/TradingSimulation.h"
 #include "ZeroIntelligenceMarketMaker.h"
-#include "RealTimeBusWasm.h"
 #include "L2HeatmapHook.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -223,7 +222,6 @@ void warm_up_agent_cpp(TradingSimulation &sim,
 class ExchangeSimulation {
 private:
     std::unique_ptr<TradingSimulation> sim_;
-    std::unique_ptr<RealTimeBusWasm> rtb_;
     std::unique_ptr<L2HeatmapHook> l2_heatmap_hook_;  // Changed from L2WasmHook
     std::vector<std::shared_ptr<trading::algo::ZeroIntelligenceMarketMaker>> trader_pool_;
     SimulationParams params_;
@@ -392,8 +390,6 @@ public:
             std::cout << "[ExchangeSimulation] DEBUG: Registering L2HeatmapHook with event bus..." << std::endl;
             sim_->get_event_bus().register_pre_publish_hook(l2_heatmap_hook_.get());
             
-            rtb_ = std::make_unique<RealTimeBusWasm>(sim_->get_event_bus());
-
             // Create agents
             std::cout << "[ExchangeSimulation] DEBUG: Creating " << params_.agents << " agents..." << std::endl;
             std::default_random_engine main_rng(params_.seed);
@@ -470,11 +466,8 @@ public:
         
         try {
             is_running_ = true;
-            std::cout << "[ExchangeSimulation] DEBUG: Starting RealTimeBusWasm with speed factor " << params_.speed_factor << std::endl;
+            std::cout << "[ExchangeSimulation] DEBUG: Simulation started, ready for JavaScript timing control" << std::endl;
             std::cout << "[ExchangeSimulation] DEBUG: Initial queue size: " << sim_->get_event_bus().get_event_queue_size() << std::endl;
-            rtb_->run(params_.speed_factor);
-            is_running_ = false;
-            std::cout << "[ExchangeSimulation] DEBUG: RealTimeBusWasm finished" << std::endl;
             return true;
         } catch (...) {
             std::cout << "[ExchangeSimulation] ERROR: Exception during start!" << std::endl;
@@ -485,10 +478,47 @@ public:
 
     // Stop the simulation
     void stop() {
-        if (rtb_) {
-            rtb_->stop();
-        }
         is_running_ = false;
+        std::cout << "[ExchangeSimulation] DEBUG: Simulation stopped" << std::endl;
+    }
+
+    // New methods to expose EventBus functionality for JavaScript timing control
+    
+    // Process one event and return true if an event was processed
+    bool step() {
+        if (!sim_ || !is_running_) return false;
+        
+        auto processed_event = sim_->get_event_bus().step();
+        return processed_event.has_value();
+    }
+    
+    // Peek at the next event without processing it
+    // Returns the scheduled time in microseconds since epoch, or -1 if no events
+    double peek_next_event_time() {
+        if (!sim_ || !is_running_) return -1.0;
+        
+        auto next_event = sim_->get_event_bus().peak();
+        if (!next_event.has_value()) return -1.0;
+        
+        auto time_since_epoch = next_event->scheduled_time.time_since_epoch();
+        auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(time_since_epoch);
+        return static_cast<double>(microseconds.count());
+    }
+    
+    // Get current simulation time in microseconds since epoch
+    double get_current_simulation_time() {
+        if (!sim_) return 0.0;
+        
+        auto current_time = sim_->get_event_bus().get_current_time();
+        auto time_since_epoch = current_time.time_since_epoch();
+        auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(time_since_epoch);
+        return static_cast<double>(microseconds.count());
+    }
+    
+    // Check if there are events to process
+    bool has_events() {
+        if (!sim_) return false;
+        return sim_->get_event_bus().get_event_queue_size() > 0;
     }
 
     // Cleanup
@@ -498,7 +528,6 @@ public:
             sim_->get_event_bus().deregister_pre_publish_hook(l2_heatmap_hook_.get());
         }
         trader_pool_.clear();
-        rtb_.reset();
         sim_.reset();
         l2_heatmap_hook_.reset();
         is_initialized_ = false;
@@ -562,6 +591,11 @@ EMSCRIPTEN_BINDINGS(exchange_simulation) {
         // Status getters
         .function("isRunning", &ExchangeSimulation::is_running)
         .function("isInitialized", &ExchangeSimulation::is_initialized)
-        .function("getQueueSize", &ExchangeSimulation::get_queue_size);
+        .function("getQueueSize", &ExchangeSimulation::get_queue_size)
+        // New EventBus methods for JavaScript timing control
+        .function("step", &ExchangeSimulation::step)
+        .function("peekNextEventTime", &ExchangeSimulation::peek_next_event_time)
+        .function("getCurrentSimulationTime", &ExchangeSimulation::get_current_simulation_time)
+        .function("hasEvents", &ExchangeSimulation::has_events);
 }
 #endif 

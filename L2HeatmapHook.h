@@ -22,7 +22,6 @@
 #include "src/EventBus.h"
 #include "src/TradingSimulation.h"
 #include "ZeroIntelligenceMarketMaker.h"
-#include "src/RealTimeBus.h"
 #include "src/PrePublishHookBase.h"
 #include "HeatmapBuffer.h"
 
