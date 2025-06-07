@@ -408,7 +408,10 @@
                 const currentTime = voxelData.currentTime;
                 this.timeOffset = currentTime - 5000;
 
-                const allVoxels = [...voxelData.active, ...voxelData.historical.slice(-100)];
+                // Combine active voxels with as many of the most recent historical voxels as we can fit
+                const availableSlots = this.maxInstances - voxelData.active.length;
+                const historyToShow = availableSlots > 0 ? voxelData.historical.slice(-availableSlots) : [];
+                const allVoxels = [...voxelData.active, ...historyToShow];
 
                 // Ensure InstancedMeshes exist
                 this.ensureInstancedMeshes();

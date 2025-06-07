@@ -1,0 +1,1647 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L3-to-L2 Texture-Based 3D Visualization</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            height: 90vh;
+        }
+
+        .panel {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .button-start {
+            background: #238636;
+            color: white;
+        }
+
+        .button-stop {
+            background: #da3633;
+            color: white;
+        }
+
+        .button-reset {
+            background: #1f6feb;
+            color: white;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #30363d;
+        }
+
+        .stat-label {
+            color: #8b949e;
+            font-size: 12px;
+        }
+
+        .stat-value {
+            color: #58a6ff;
+            font-weight: 600;
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: #c9d1d9;
+        }
+
+        .control-input {
+            width: 100%;
+        }
+
+        .control-hint {
+            font-size: 10px;
+            color: #8b949e;
+        }
+
+        .heatmap-canvas {
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .viz-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            padding: 12px;
+            background-color: #21262d;
+            border-radius: 6px;
+            border: 1px solid #30363d;
+        }
+
+        .section h3 {
+            color: #58a6ff;
+            font-size: 14px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .text-green {
+            color: #7ee787;
+        }
+
+        .text-red {
+            color: #ff7b72;
+        }
+
+        .text-yellow {
+            color: #fbbf24;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>L3-to-L2 Texture-Based Orderbook 3D Visualization</h1>
+
+    <div class="container">
+        <div class="panel">
+            <div class="viz-container">
+                <div>
+                    <h2>3D Height-Mapped Surface</h2>
+                    <div id="threejs-container"
+                        style="width: 100%; height: 400px; border: 1px solid #30363d; border-radius: 4px; background: #000;">
+                    </div>
+                </div>
+
+                <div>
+                    <h2>Combined L2 Heatmap</h2>
+                    <div style="text-align: center;">
+                        <canvas id="combinedHeatmap" class="heatmap-canvas" width="400" height="200"></canvas>
+                        <div style="font-size: 12px; color: #8b949e; margin-top: 5px;">
+                            🔵 Bids (Left) | 🔴 Asks (Right) | Brightness = Volume
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 15px;">
+                    <h3 style="color: #58a6ff; font-size: 14px; margin-bottom: 10px;">Visualization Controls</h3>
+                    <div class="control-group">
+                        <label class="control-label">Height Scale: <span id="heightScaleValue">20</span>x</label>
+                        <input type="range" id="heightScale" class="control-input" min="1" max="100" step="1"
+                            value="20">
+                        <div class="control-hint">Volume to height multiplier</div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Smoothing: <span id="smoothingValue">2</span>px</label>
+                        <input type="range" id="smoothing" class="control-input" min="0" max="10" step="1" value="2">
+                        <div class="control-hint">Gaussian blur radius</div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Time Window: <span id="timeWindowValue">5000</span>ms</label>
+                        <input type="range" id="timeWindow" class="control-input" min="1000" max="30000" step="1000"
+                            value="5000">
+                        <div class="control-hint">Historical data retention</div>
+                    </div>
+                    <div class="control-group">
+                        <label class="control-label">Resolution: <span id="resolutionValue">128</span>px</label>
+                        <input type="range" id="resolution" class="control-input" min="64" max="256" step="64"
+                            value="128">
+                        <div class="control-hint">Texture resolution (higher = more detail, slower)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>L3-to-L2 Generator & Stats</h2>
+
+            <div class="controls">
+                <button id="startBtn" class="button button-start">Start</button>
+                <button id="stopBtn" class="button button-stop">Stop</button>
+                <button id="resetBtn" class="button button-reset">Reset</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-label">L3 Events</div>
+                    <div class="stat-value" id="l3Events">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">L2 Updates</div>
+                    <div class="stat-value" id="l2Updates">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Orders</div>
+                    <div class="stat-value" id="totalOrders">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Event Rate</div>
+                    <div class="stat-value" id="eventRate">0.0/s</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Vertices Count</div>
+                    <div class="stat-value" id="verticesCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">FPS</div>
+                    <div class="stat-value" id="fps">0</div>
+                </div>
+            </div>
+
+            <!-- Enhanced L3 Generator Controls -->
+            <div class="section">
+                <h3>Event Rate Control</h3>
+                <div class="control-group">
+                    <label class="control-label">Target Rate: <span id="eventsPerSecondValue">15</span> Hz</label>
+                    <input type="range" id="eventsPerSecond" class="control-input" min="5" max="50" step="5" value="15">
+                    <div class="control-hint">5 - 50 L3 events per second (capped for stability)</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Market Parameters</h3>
+                <div class="control-group">
+                    <label class="control-label">Mid Price: $<span id="midPriceValue">100.0</span></label>
+                    <input type="range" id="midPrice" class="control-input" min="50" max="200" step="1" value="100">
+                    <div class="control-hint">Base market price</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Target Spread: $<span id="spreadSizeValue">0.010</span></label>
+                    <input type="range" id="spreadSize" class="control-input" min="0.001" max="0.1" step="0.001"
+                        value="0.01">
+                    <div class="control-hint">Typical bid-ask spread</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Min Spread: $<span id="minSpreadValue">0.005</span></label>
+                    <input type="range" id="minSpread" class="control-input" min="0.001" max="0.05" step="0.001"
+                        value="0.005">
+                    <div class="control-hint">Minimum allowable spread</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Max Price Levels: <span id="maxPriceLevelsValue">25</span></label>
+                    <input type="range" id="maxPriceLevels" class="control-input" min="10" max="50" step="5" value="25">
+                    <div class="control-hint">Maximum price levels per side</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Order Sizes</h3>
+                <div class="control-group">
+                    <label class="control-label">Min Order Size: <span id="minOrderSizeValue">10</span></label>
+                    <input type="range" id="minOrderSize" class="control-input" min="1" max="50" step="1" value="10">
+                    <div class="control-hint">Minimum individual order size</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Max Order Size: <span id="maxOrderSizeValue">100</span></label>
+                    <input type="range" id="maxOrderSize" class="control-input" min="50" max="500" step="10"
+                        value="100">
+                    <div class="control-hint">Maximum individual order size</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Market Making & Spread Focus</h3>
+                <div class="control-group">
+                    <label class="control-label">Market Making Weight: <span
+                            id="marketMakingWeightValue">25</span>%</label>
+                    <input type="range" id="marketMakingWeight" class="control-input" min="5" max="50" step="5"
+                        value="25">
+                    <div class="control-hint">Frequency of spread-tightening orders</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Near-Spread Bias: <span id="nearSpreadBiasValue">60</span>%</label>
+                    <input type="range" id="nearSpreadBias" class="control-input" min="30" max="80" step="5" value="60">
+                    <div class="control-hint">Probability of orders near best bid/ask</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Balance Strength: <span id="balanceStrengthValue">50</span>%</label>
+                    <input type="range" id="balanceStrength" class="control-input" min="0" max="100" step="10"
+                        value="50">
+                    <div class="control-hint">How aggressively to balance sides</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Event Probabilities (%)</h3>
+                <div class="control-group">
+                    <label class="control-label">Add Orders: <span id="addOrderWeightValue">40</span>%</label>
+                    <input type="range" id="addOrderWeight" class="control-input" min="20" max="60" step="5" value="40">
+                    <div class="control-hint">New order placement</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Cancel Orders: <span id="cancelOrderWeightValue">30</span>%</label>
+                    <input type="range" id="cancelOrderWeight" class="control-input" min="15" max="45" step="5"
+                        value="30">
+                    <div class="control-hint">Order cancellations</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Fill Orders: <span id="fillOrderWeightValue">20</span>%</label>
+                    <input type="range" id="fillOrderWeight" class="control-input" min="10" max="35" step="5"
+                        value="20">
+                    <div class="control-hint">Partial/full executions</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Market Sweeps: <span id="marketSweepWeightValue">10</span>%</label>
+                    <input type="range" id="marketSweepWeight" class="control-input" min="2" max="20" step="2"
+                        value="10">
+                    <div class="control-hint">Large market orders consuming levels</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <h2>Current L2 Orderbook</h2>
+                <p style="color: #8b949e; font-size: 12px;">Aggregated from L3 individual orders</p>
+
+                <div style="display:flex; gap: 15px;">
+                    <div style="flex: 1;">
+                        <h3 style="color: #7ee787; font-size: 14px; margin-bottom: 5px;">Bids</h3>
+                        <table class="ob-table" id="bidTable"></table>
+                    </div>
+                    <div style="flex: 1;">
+                        <h3 style="color: #ff7b72; font-size: 14px; margin-bottom: 5px;">Asks</h3>
+                        <table class="ob-table" id="askTable"></table>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <h3>L3-to-L2 Aggregation Benefits:</h3>
+                <ul style="font-size: 12px; color: #8b949e;">
+                    <li>🏗️ <strong>Realistic Dynamics:</strong> L2 from actual order flow</li>
+                    <li>📊 <strong>True Aggregation:</strong> Sum individual orders per level</li>
+                    <li>🎯 <strong>Market Making:</strong> Concentrated activity near spread</li>
+                    <li>⚡ <strong>High Frequency:</strong> Rapid L3 events → smooth L2</li>
+                    <li>🔄 <strong>Continuous Updates:</strong> L2 evolves with every L3 event</li>
+                    <li>🎨 <strong>Unified Visualization:</strong> Single combined heatmap</li>
+                    <li>📈 <strong>Price Discovery:</strong> Natural imbalance-driven movement</li>
+                </ul>
+            </div>
+
+            <div style="margin-top: 15px;">
+                <h3>Technical Details:</h3>
+                <div style="font-size: 11px; color: #8b949e;">
+                    <p><strong>L3 Events:</strong> Individual order add/cancel/fill</p>
+                    <p><strong>L2 Aggregation:</strong> Sum order sizes per price level</p>
+                    <p><strong>X-Axis:</strong> Price levels (bids left, asks right)</p>
+                    <p><strong>Y-Axis:</strong> Time progression</p>
+                    <p><strong>Combined Surface:</strong> Single mesh with bid/ask regions</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class CombinedL2TextureRenderer {
+            constructor(containerElement) {
+                this.container = containerElement;
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, containerElement.clientWidth / containerElement.clientHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+
+                // Texture resolution
+                this.textureSize = 128;
+                this.heightScale = 20;
+                this.smoothing = 2;
+                this.timeWindow = 5000;
+
+                // Combined heatmap canvas
+                this.combinedCanvas = document.getElementById('combinedHeatmap');
+                this.combinedCtx = this.combinedCanvas.getContext('2d');
+
+                // Data structures - combined heatmap with bids on left, asks on right
+                this.combinedHeatmapData = new Float32Array(this.textureSize * this.textureSize * 2); // bid + ask side by side
+                this.timeSlices = [];
+
+                // Three.js objects
+                this.combinedSurface = null;
+                this.combinedTexture = null;
+
+                this.init();
+            }
+
+            init() {
+                // Setup renderer
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+                this.renderer.setClearColor(0x0d1117);
+                this.container.appendChild(this.renderer.domElement);
+
+                // Setup camera
+                this.camera.position.set(0, 80, 80);
+                this.camera.lookAt(0, 0, 0);
+
+                // Add lights
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+                directionalLight.position.set(50, 100, 50);
+                this.scene.add(directionalLight);
+
+                // Create combined surface
+                this.createCombinedSurface();
+
+                // Setup controls
+                this.setupControls();
+
+                // Handle resize
+                window.addEventListener('resize', () => this.onWindowResize());
+            }
+
+            createCombinedSurface() {
+                // Create wider geometry for combined bid/ask surface
+                const geometry = new THREE.PlaneGeometry(200, 100, this.textureSize * 2 - 1, this.textureSize - 1);
+
+                // Create combined texture
+                this.combinedTexture = new THREE.DataTexture(
+                    new Uint8Array(this.textureSize * 2 * this.textureSize * 4),
+                    this.textureSize * 2, this.textureSize,
+                    THREE.RGBAFormat
+                );
+                this.combinedTexture.needsUpdate = true;
+
+                const material = new THREE.MeshLambertMaterial({
+                    wireframe: false,
+                    transparent: true,
+                    opacity: 0.9,
+                    side: THREE.DoubleSide
+                });
+
+                this.combinedSurface = new THREE.Mesh(geometry, material);
+                this.combinedSurface.rotation.x = -Math.PI / 2;
+                this.combinedSurface.position.set(0, 0, 0);
+                this.scene.add(this.combinedSurface);
+
+                // Add grid and axes
+                const gridHelper = new THREE.GridHelper(220, 24, 0x333333, 0x333333);
+                this.scene.add(gridHelper);
+
+                this.addAxisLabels();
+            }
+
+            addAxisLabels() {
+                // Add labels for combined surface
+                this.addTextSprite('BIDS', -50, 30, -55, 0x7ee787);
+                this.addTextSprite('ASKS', 50, 30, -55, 0xff7b72);
+                this.addTextSprite('Price →', 0, 5, -60, 0x58a6ff);
+                this.addTextSprite('Time →', -110, 5, 0, 0x58a6ff);
+                this.addTextSprite('Volume ↑', -110, 30, -30, 0x58a6ff);
+            }
+
+            addTextSprite(text, x, y, z, color) {
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = 200;
+                canvas.height = 50;
+                context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+                context.font = 'bold 16px Arial';
+                context.fillText(text, 10, 30);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+                const sprite = new THREE.Sprite(spriteMaterial);
+                sprite.position.set(x, y, z);
+                sprite.scale.set(15, 3.75, 1);
+                this.scene.add(sprite);
+            }
+
+            setupControls() {
+                let isMouseDown = false;
+                let mouseX = 0;
+                let mouseY = 0;
+
+                this.renderer.domElement.addEventListener('mousedown', (e) => {
+                    isMouseDown = true;
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                });
+
+                this.renderer.domElement.addEventListener('mousemove', (e) => {
+                    if (!isMouseDown) return;
+
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+
+                    const spherical = new THREE.Spherical();
+                    spherical.setFromVector3(this.camera.position);
+                    spherical.theta -= deltaX * 0.01;
+                    spherical.phi += deltaY * 0.01;
+                    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+
+                    this.camera.position.setFromSpherical(spherical);
+                    this.camera.lookAt(0, 0, 0);
+
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                });
+
+                this.renderer.domElement.addEventListener('mouseup', () => {
+                    isMouseDown = false;
+                });
+
+                this.renderer.domElement.addEventListener('wheel', (e) => {
+                    const distance = this.camera.position.length();
+                    const newDistance = distance + e.deltaY * 0.5;
+                    this.camera.position.normalize().multiplyScalar(Math.max(20, Math.min(200, newDistance)));
+                });
+            }
+
+            // Convert L3 orderbook to L2 by aggregating orders
+            convertL3ToL2(l3Orderbook) {
+                try {
+                    const l2Bids = [];
+                    const l2Asks = [];
+
+                    // Aggregate bids
+                    const bidPriceLevels = new Map();
+                    if (l3Orderbook.bids && Array.isArray(l3Orderbook.bids)) {
+                        l3Orderbook.bids.forEach(level => {
+                            if (level.orders && Array.isArray(level.orders)) {
+                                const totalSize = level.orders.reduce((sum, order) => sum + (order.size || 0), 0);
+                                if (totalSize > 0) {
+                                    bidPriceLevels.set(level.price, totalSize);
+                                }
+                            }
+                        });
+                    }
+
+                    // Aggregate asks
+                    const askPriceLevels = new Map();
+                    if (l3Orderbook.asks && Array.isArray(l3Orderbook.asks)) {
+                        l3Orderbook.asks.forEach(level => {
+                            if (level.orders && Array.isArray(level.orders)) {
+                                const totalSize = level.orders.reduce((sum, order) => sum + (order.size || 0), 0);
+                                if (totalSize > 0) {
+                                    askPriceLevels.set(level.price, totalSize);
+                                }
+                            }
+                        });
+                    }
+
+                    // Convert to L2 format
+                    for (const [price, size] of bidPriceLevels) {
+                        l2Bids.push({ price, size });
+                    }
+                    for (const [price, size] of askPriceLevels) {
+                        l2Asks.push({ price, size });
+                    }
+
+                    // Sort properly
+                    l2Bids.sort((a, b) => b.price - a.price); // Descending
+                    l2Asks.sort((a, b) => a.price - b.price); // Ascending
+
+                    return { bids: l2Bids, asks: l2Asks };
+                } catch (error) {
+                    console.error('Error converting L3 to L2:', error);
+                    return { bids: [], asks: [] };
+                }
+            }
+
+            updateL2Data(l3Orderbook) {
+                try {
+                    const currentTime = performance.now();
+
+                    // Convert L3 to L2
+                    const l2Data = this.convertL3ToL2(l3Orderbook);
+
+                    // Add time slice
+                    this.timeSlices.push({
+                        timestamp: currentTime,
+                        bids: [...l2Data.bids],
+                        asks: [...l2Data.asks]
+                    });
+
+                    // Remove old data outside time window
+                    const cutoffTime = currentTime - this.timeWindow;
+                    this.timeSlices = this.timeSlices.filter(slice => slice.timestamp > cutoffTime);
+
+                    // Limit the number of time slices to prevent memory issues
+                    if (this.timeSlices.length > 1000) {
+                        this.timeSlices = this.timeSlices.slice(-500); // Keep last 500 slices
+                    }
+
+                    // Update combined heatmap with error handling
+                    this.updateCombinedHeatmap();
+                    this.updateCombinedSurface();
+
+                    return l2Data; // Return for display purposes
+                } catch (error) {
+                    console.error('Error updating L2 data:', error);
+                    return { bids: [], asks: [] };
+                }
+            }
+
+            updateCombinedHeatmap() {
+                try {
+                    // Clear combined heatmap data
+                    this.combinedHeatmapData.fill(0);
+
+                    if (this.timeSlices.length === 0) return;
+
+                    const priceRange = this.calculatePriceRange();
+                    const timeRange = this.timeSlices[this.timeSlices.length - 1].timestamp - this.timeSlices[0].timestamp;
+
+                    // Skip processing if time range is invalid
+                    if (timeRange <= 0) return;
+
+                    // Build continuous price level history
+                    const bidHistory = this.buildPriceLevelHistory(this.timeSlices, 'bids');
+                    const askHistory = this.buildPriceLevelHistory(this.timeSlices, 'asks');
+
+                    // Draw continuous segments - bids on left half, asks on right half
+                    this.drawContinuousLevels(bidHistory, priceRange, timeRange, 'bid');
+                    this.drawContinuousLevels(askHistory, priceRange, timeRange, 'ask');
+
+                    // Apply smoothing if enabled
+                    if (this.smoothing > 0) {
+                        this.applyGaussianBlur();
+                    }
+
+                    // Update canvas display
+                    this.updateCombinedHeatmapCanvas();
+                } catch (error) {
+                    console.error('Error updating combined heatmap:', error);
+                }
+            }
+
+            buildPriceLevelHistory(timeSlices, side) {
+                try {
+                    const history = new Map();
+                    const activeLevels = new Map();
+                    const maxSegmentsPerPrice = 100; // Limit segments to prevent memory issues
+
+                    timeSlices.forEach((slice) => {
+                        if (!slice || !slice[side] || !Array.isArray(slice[side])) return;
+
+                        const currentLevels = slice[side];
+                        const currentPriceKeys = new Set();
+
+                        currentLevels.forEach(level => {
+                            if (!level || typeof level.price !== 'number' || typeof level.size !== 'number') return;
+
+                            const priceKey = Math.round(level.price * 1000);
+                            currentPriceKeys.add(priceKey);
+
+                            const existing = activeLevels.get(priceKey);
+
+                            if (!existing) {
+                                activeLevels.set(priceKey, {
+                                    volume: level.size,
+                                    price: level.price,
+                                    startTime: slice.timestamp
+                                });
+                            } else if (Math.abs(existing.volume - level.size) > 0.1) {
+                                this.addHistorySegment(history, priceKey, existing, slice.timestamp, maxSegmentsPerPrice);
+                                activeLevels.set(priceKey, {
+                                    volume: level.size,
+                                    price: level.price,
+                                    startTime: slice.timestamp
+                                });
+                            }
+                        });
+
+                        for (const [priceKey, activeLevel] of activeLevels) {
+                            if (!currentPriceKeys.has(priceKey)) {
+                                this.addHistorySegment(history, priceKey, activeLevel, slice.timestamp, maxSegmentsPerPrice);
+                                activeLevels.delete(priceKey);
+                            }
+                        }
+                    });
+
+                    if (timeSlices.length > 0) {
+                        const finalTime = timeSlices[timeSlices.length - 1].timestamp;
+                        for (const [priceKey, activeLevel] of activeLevels) {
+                            this.addHistorySegment(history, priceKey, activeLevel, finalTime, maxSegmentsPerPrice);
+                        }
+                    }
+
+                    return history;
+                } catch (error) {
+                    console.error('Error building price level history:', error);
+                    return new Map();
+                }
+            }
+
+            addHistorySegment(history, priceKey, level, endTime, maxSegments = 100) {
+                try {
+                    if (!history.has(priceKey)) {
+                        history.set(priceKey, []);
+                    }
+
+                    const segments = history.get(priceKey);
+
+                    // Limit the number of segments per price level to prevent memory issues
+                    if (segments.length >= maxSegments) {
+                        segments.shift(); // Remove oldest segment
+                    }
+
+                    segments.push({
+                        startTime: level.startTime,
+                        endTime: endTime,
+                        volume: level.volume,
+                        price: level.price
+                    });
+                } catch (error) {
+                    console.error('Error adding history segment:', error);
+                }
+            }
+
+            drawContinuousLevels(levelHistory, priceRange, timeRange, side) {
+                try {
+                    if (this.timeSlices.length === 0 || timeRange <= 0) return;
+
+                    const startTime = this.timeSlices[0].timestamp;
+                    const isBid = side === 'bid';
+                    const maxArrayIndex = this.combinedHeatmapData.length - 1;
+
+                    for (const [priceKey, segments] of levelHistory) {
+                        segments.forEach(segment => {
+                            // Calculate price position with bounds checking
+                            const priceProgress = (segment.price - priceRange.min) / (priceRange.max - priceRange.min);
+
+                            // Skip if price is out of range
+                            if (priceProgress < 0 || priceProgress > 1) return;
+
+                            // For combined surface: bids on left half (0 to textureSize), asks on right half (textureSize to textureSize*2)
+                            let xIndex;
+                            if (isBid) {
+                                // Map to left half, but reverse order (highest prices on right of bid side)
+                                xIndex = Math.floor((1 - priceProgress) * (this.textureSize - 1));
+                            } else {
+                                // Map to right half
+                                xIndex = this.textureSize + Math.floor(priceProgress * (this.textureSize - 1));
+                            }
+
+                            // Bounds checking for x index
+                            if (xIndex < 0 || xIndex >= this.textureSize * 2) return;
+
+                            // Calculate time range for this segment
+                            const startProgress = (segment.startTime - startTime) / timeRange;
+                            const endProgress = (segment.endTime - startTime) / timeRange;
+
+                            // Bounds checking for time progress
+                            if (startProgress < 0 || endProgress > 1) return;
+
+                            const startY = Math.floor(startProgress * (this.textureSize - 1));
+                            const endY = Math.floor(endProgress * (this.textureSize - 1));
+
+                            // Draw continuous line in time dimension with bounds checking
+                            for (let yIndex = Math.max(0, startY); yIndex <= Math.min(this.textureSize - 1, endY); yIndex++) {
+                                const index = yIndex * this.textureSize * 2 + xIndex;
+
+                                // Additional bounds checking for array access
+                                if (index >= 0 && index <= maxArrayIndex) {
+                                    this.combinedHeatmapData[index] = Math.max(this.combinedHeatmapData[index], segment.volume);
+                                }
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error drawing continuous levels:', error);
+                }
+            }
+
+            calculatePriceRange() {
+                if (this.timeSlices.length === 0) return { min: 99, max: 101 };
+
+                let min = Infinity;
+                let max = -Infinity;
+
+                this.timeSlices.forEach(slice => {
+                    slice.bids.forEach(bid => {
+                        min = Math.min(min, bid.price);
+                        max = Math.max(max, bid.price);
+                    });
+                    slice.asks.forEach(ask => {
+                        min = Math.min(min, ask.price);
+                        max = Math.max(max, ask.price);
+                    });
+                });
+
+                const padding = (max - min) * 0.1;
+                return { min: min - padding, max: max + padding };
+            }
+
+            applyGaussianBlur() {
+                const tempData = new Float32Array(this.combinedHeatmapData);
+                const radius = this.smoothing;
+                const width = this.textureSize * 2;
+                const height = this.textureSize;
+
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        let sum = 0;
+                        let count = 0;
+
+                        for (let dy = -radius; dy <= radius; dy++) {
+                            for (let dx = -radius; dx <= radius; dx++) {
+                                const nx = x + dx;
+                                const ny = y + dy;
+
+                                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                                    sum += tempData[ny * width + nx];
+                                    count++;
+                                }
+                            }
+                        }
+
+                        this.combinedHeatmapData[y * width + x] = count > 0 ? sum / count : 0;
+                    }
+                }
+            }
+
+            updateCombinedHeatmapCanvas() {
+                const canvas = this.combinedCanvas;
+                const ctx = this.combinedCtx;
+
+                // Set canvas size for display
+                canvas.width = this.textureSize * 2;
+                canvas.height = this.textureSize;
+
+                const imageData = ctx.createImageData(this.textureSize * 2, this.textureSize);
+                const pixels = imageData.data;
+
+                // Find max value for normalization
+                const maxValue = Math.max(...this.combinedHeatmapData);
+
+                for (let i = 0; i < this.combinedHeatmapData.length; i++) {
+                    const intensity = maxValue > 0 ? this.combinedHeatmapData[i] / maxValue : 0;
+                    const pixelIndex = i * 4;
+
+                    const x = i % (this.textureSize * 2);
+                    const isBidSide = x < this.textureSize;
+
+                    if (isBidSide) {
+                        // Bid side - blue/green
+                        pixels[pixelIndex] = 0;     // R
+                        pixels[pixelIndex + 1] = intensity * 255; // G
+                        pixels[pixelIndex + 2] = intensity * 128; // B (some blue)
+                    } else {
+                        // Ask side - red
+                        pixels[pixelIndex] = intensity * 255; // R
+                        pixels[pixelIndex + 1] = 0; // G
+                        pixels[pixelIndex + 2] = 0; // B
+                    }
+                    pixels[pixelIndex + 3] = intensity > 0 ? 255 : 0; // A
+                }
+
+                ctx.putImageData(imageData, 0, 0);
+            }
+
+            updateCombinedSurface() {
+                const geometry = this.combinedSurface.geometry;
+                const vertices = geometry.attributes.position.array;
+
+                // Find max value for normalization
+                const maxValue = Math.max(...this.combinedHeatmapData);
+                const width = this.textureSize * 2;
+                const height = this.textureSize;
+
+                for (let i = 0; i < height; i++) {
+                    for (let j = 0; j < width; j++) {
+                        const dataIndex = i * width + j;
+                        const vertexIndex = (i * width + j) * 3 + 2; // Z component
+
+                        const normalizedHeight = maxValue > 0 ? this.combinedHeatmapData[dataIndex] / maxValue : 0;
+                        vertices[vertexIndex] = normalizedHeight * this.heightScale;
+                    }
+                }
+
+                geometry.attributes.position.needsUpdate = true;
+                geometry.computeVertexNormals();
+            }
+
+            setHeightScale(scale) {
+                this.heightScale = scale;
+            }
+
+            setSmoothing(smoothing) {
+                this.smoothing = smoothing;
+            }
+
+            setTimeWindow(timeWindow) {
+                this.timeWindow = timeWindow;
+            }
+
+            setResolution(resolution) {
+                this.textureSize = resolution;
+                this.combinedHeatmapData = new Float32Array(this.textureSize * this.textureSize * 2);
+
+                // Recreate surface with new resolution
+                this.scene.remove(this.combinedSurface);
+                this.createCombinedSurface();
+            }
+
+            render() {
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            onWindowResize() {
+                const width = this.container.clientWidth;
+                const height = this.container.clientHeight;
+
+                this.camera.aspect = width / height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(width, height);
+            }
+
+            getStats() {
+                return {
+                    vertices: this.textureSize * this.textureSize * 2, // Combined surface
+                    textureSize: this.textureSize,
+                    timeSlices: this.timeSlices.length
+                };
+            }
+        }
+
+        // Enhanced L3 data generator with market making focus
+        class EnhancedL3DataGenerator {
+            constructor() {
+                this.basePrice = 100;
+                this.isRunning = false;
+                this.eventCount = 0;
+                this.intervalId = null;
+                this.eventsPerSecond = 15;
+                this.currentOrderbook = { bids: [], asks: [] };
+                this.priceStep = 0.001; // Smaller price step for tighter spreads
+                this.maxLevels = 25;
+                this.nextOrderId = 1;
+
+                // Processing throttling to prevent stack overflow
+                this.lastCallbackTime = 0;
+                this.callbackThrottleMs = 50; // Max 20 callbacks per second
+                this.isProcessing = false;
+
+                // Enhanced parameters for market making focus
+                this.settings = {
+                    spreadSize: 0.01,
+                    minSpread: 0.005,
+                    maxOrderSize: 100,
+                    minOrderSize: 10,
+                    addOrderWeight: 40,
+                    cancelOrderWeight: 30,
+                    fillOrderWeight: 20,
+                    marketSweepWeight: 10,
+                    marketMakingWeight: 25,
+                    nearSpreadBias: 60, // NEW: Bias toward orders near best bid/ask
+                    balanceStrength: 50,
+                    maxPriceLevels: 25
+                };
+
+                // Market simulation state
+                this.trend = 0;
+                this.volatility = 0.5;
+                this.volume = 50;
+            }
+
+            updateSettings(newSettings) {
+                Object.assign(this.settings, newSettings);
+            }
+
+            setEventRate(hz) {
+                this.eventsPerSecond = hz;
+                if (this.isRunning) {
+                    this.stop();
+                    this.start(this.currentCallback);
+                }
+            }
+
+            start(callback) {
+                if (this.isRunning) return;
+                this.isRunning = true;
+                this.currentCallback = callback;
+
+                // Generate initial orderbook
+                this.generateInitialOrderbook();
+
+                // Use requestAnimationFrame for smoother performance instead of setInterval
+                const runSimulation = () => {
+                    if (!this.isRunning) return;
+
+                    try {
+                        // Throttle events to prevent stack overflow
+                        const now = performance.now();
+                        const timeSinceLastEvent = now - this.lastCallbackTime;
+                        const minInterval = 1000 / Math.min(this.eventsPerSecond, 50); // Cap at 50 Hz max
+
+                        if (timeSinceLastEvent >= minInterval && !this.isProcessing) {
+                            this.isProcessing = true;
+                            this.simulateEvent();
+                            this.eventCount++;
+
+                            // Throttle callback execution
+                            if (now - this.lastCallbackTime >= this.callbackThrottleMs) {
+                                this.lastCallbackTime = now;
+                                callback(this.currentOrderbook);
+                            }
+                            this.isProcessing = false;
+                        }
+                    } catch (error) {
+                        console.error('Error in simulation:', error);
+                        this.isProcessing = false;
+                    }
+
+                    requestAnimationFrame(runSimulation);
+                };
+
+                requestAnimationFrame(runSimulation);
+            }
+
+            stop() {
+                this.isRunning = false;
+                this.isProcessing = false;
+                // No need to clear interval since we're using requestAnimationFrame
+            }
+
+            reset() {
+                this.stop();
+                this.eventCount = 0;
+                this.basePrice = 100;
+                this.currentOrderbook = { bids: [], asks: [] };
+                this.nextOrderId = 1;
+                this.trend = 0;
+                this.volatility = 0.5;
+            }
+
+            generateInitialOrderbook() {
+                this.currentOrderbook.bids = [];
+                this.currentOrderbook.asks = [];
+
+                // Generate bid levels with multiple orders per level
+                for (let i = 0; i < this.maxLevels; i++) {
+                    const price = parseFloat((this.basePrice - this.settings.spreadSize / 2 - i * this.priceStep * 10).toFixed(3));
+                    const orders = [];
+                    const numOrders = Math.max(1, Math.floor(Math.random() * (6 - i * 0.2)));
+
+                    for (let j = 0; j < numOrders; j++) {
+                        orders.push({
+                            id: this.nextOrderId++,
+                            price: price,
+                            size: Math.random() * (this.settings.maxOrderSize - this.settings.minOrderSize) + this.settings.minOrderSize,
+                            timestamp: Date.now() - Math.random() * 10000,
+                            side: 'bid'
+                        });
+                    }
+
+                    if (orders.length > 0) {
+                        this.currentOrderbook.bids.push({ price, orders });
+                    }
+                }
+
+                // Generate ask levels with multiple orders per level
+                for (let i = 0; i < this.maxLevels; i++) {
+                    const price = parseFloat((this.basePrice + this.settings.spreadSize / 2 + i * this.priceStep * 10).toFixed(3));
+                    const orders = [];
+                    const numOrders = Math.max(1, Math.floor(Math.random() * (6 - i * 0.2)));
+
+                    for (let j = 0; j < numOrders; j++) {
+                        orders.push({
+                            id: this.nextOrderId++,
+                            price: price,
+                            size: Math.random() * (this.settings.maxOrderSize - this.settings.minOrderSize) + this.settings.minOrderSize,
+                            timestamp: Date.now() - Math.random() * 10000,
+                            side: 'ask'
+                        });
+                    }
+
+                    if (orders.length > 0) {
+                        this.currentOrderbook.asks.push({ price, orders });
+                    }
+                }
+
+                this.sortOrderbook();
+            }
+
+            simulateEvent() {
+                // Determine event type based on weights + market making
+                const totalWeight = this.settings.addOrderWeight + this.settings.cancelOrderWeight +
+                    this.settings.fillOrderWeight + this.settings.marketSweepWeight +
+                    this.settings.marketMakingWeight;
+
+                const rand = Math.random() * totalWeight;
+                let cumulative = 0;
+
+                if (rand < (cumulative += this.settings.addOrderWeight)) {
+                    this.addOrder();
+                } else if (rand < (cumulative += this.settings.cancelOrderWeight)) {
+                    this.cancelOrder();
+                } else if (rand < (cumulative += this.settings.fillOrderWeight)) {
+                    this.fillOrder();
+                } else if (rand < (cumulative += this.settings.marketSweepWeight)) {
+                    this.marketSweep();
+                } else {
+                    this.marketMake(); // NEW: Dedicated market making
+                }
+
+                this.maintainOrderbook();
+            }
+
+            addOrder() {
+                const balance = this.calculateBalance();
+                let sideBias = 0.5;
+
+                // Apply balance strength
+                if (this.settings.balanceStrength > 0) {
+                    const volumeBias = -balance.volumeImbalanceRatio * (this.settings.balanceStrength / 100);
+                    const levelBias = -balance.levelImbalanceRatio * (this.settings.balanceStrength / 100) * 0.3;
+                    sideBias = 0.5 + volumeBias + levelBias;
+                    sideBias = Math.max(0.1, Math.min(0.9, sideBias));
+                }
+
+                const side = Math.random() < sideBias ? 'bid' : 'ask';
+                const levels = side === 'bid' ? this.currentOrderbook.bids : this.currentOrderbook.asks;
+
+                if (levels.length === 0) return;
+
+                const bestBid = this.currentOrderbook.bids.length > 0 ? this.currentOrderbook.bids[0].price : this.basePrice - this.settings.spreadSize;
+                const bestAsk = this.currentOrderbook.asks.length > 0 ? this.currentOrderbook.asks[0].price : this.basePrice + this.settings.spreadSize;
+
+                let targetPrice;
+
+                // NEW: Near-spread bias - much higher probability of orders near best prices
+                if (Math.random() < this.settings.nearSpreadBias / 100) {
+                    // Place order near best bid/ask
+                    if (side === 'bid') {
+                        // Within 5 ticks of best bid
+                        const ticksFromBest = Math.floor(Math.random() * 5);
+                        targetPrice = parseFloat((bestBid - ticksFromBest * this.priceStep).toFixed(3));
+                    } else {
+                        // Within 5 ticks of best ask
+                        const ticksFromBest = Math.floor(Math.random() * 5);
+                        targetPrice = parseFloat((bestAsk + ticksFromBest * this.priceStep).toFixed(3));
+                    }
+                } else {
+                    // Place order further out (existing logic)
+                    const levelIndex = Math.floor(Math.random() * Math.min(10, levels.length));
+                    const targetLevel = levels[levelIndex];
+                    targetPrice = targetLevel.price;
+
+                    if (Math.random() < 0.3) {
+                        const offset = (Math.random() - 0.5) * this.settings.spreadSize;
+                        targetPrice = parseFloat((targetLevel.price + offset).toFixed(3));
+                    }
+                }
+
+                // Ensure price doesn't cross spread
+                if (side === 'bid') {
+                    targetPrice = Math.min(targetPrice, bestAsk - this.settings.minSpread);
+                } else {
+                    targetPrice = Math.max(targetPrice, bestBid + this.settings.minSpread);
+                }
+
+                if ((side === 'bid' && targetPrice >= bestAsk) || (side === 'ask' && targetPrice <= bestBid)) {
+                    return;
+                }
+
+                const newOrder = {
+                    id: this.nextOrderId++,
+                    price: targetPrice,
+                    size: Math.random() * (this.settings.maxOrderSize - this.settings.minOrderSize) + this.settings.minOrderSize,
+                    timestamp: Date.now(),
+                    side: side
+                };
+
+                let priceLevel = levels.find(level => Math.abs(level.price - targetPrice) < 0.0005);
+                if (!priceLevel) {
+                    priceLevel = { price: targetPrice, orders: [] };
+                    levels.push(priceLevel);
+                    levels.sort((a, b) => side === 'bid' ? b.price - a.price : a.price - b.price);
+                }
+
+                priceLevel.orders.push(newOrder);
+            }
+
+            // NEW: Dedicated market making function
+            marketMake() {
+                const bestBid = this.currentOrderbook.bids.length > 0 ? this.currentOrderbook.bids[0].price : this.basePrice - this.settings.spreadSize;
+                const bestAsk = this.currentOrderbook.asks.length > 0 ? this.currentOrderbook.asks[0].price : this.basePrice + this.settings.spreadSize;
+                const currentSpread = bestAsk - bestBid;
+
+                // Aggressive market making - try to narrow spread
+                if (currentSpread > this.settings.spreadSize * 1.2) {
+                    const improveBid = Math.random() < 0.5;
+
+                    if (improveBid) {
+                        // Place better bid
+                        const newBidPrice = parseFloat((bestBid + this.priceStep).toFixed(3));
+                        if (newBidPrice < bestAsk - this.settings.minSpread) {
+                            const order = {
+                                id: this.nextOrderId++,
+                                price: newBidPrice,
+                                size: Math.random() * 40 + 20, // Smaller market making orders
+                                timestamp: Date.now(),
+                                side: 'bid'
+                            };
+
+                            let bidLevel = this.currentOrderbook.bids.find(level => Math.abs(level.price - newBidPrice) < 0.0005);
+                            if (!bidLevel) {
+                                bidLevel = { price: newBidPrice, orders: [] };
+                                this.currentOrderbook.bids.push(bidLevel);
+                                this.currentOrderbook.bids.sort((a, b) => b.price - a.price);
+                            }
+                            bidLevel.orders.push(order);
+                        }
+                    } else {
+                        // Place better ask
+                        const newAskPrice = parseFloat((bestAsk - this.priceStep).toFixed(3));
+                        if (newAskPrice > bestBid + this.settings.minSpread) {
+                            const order = {
+                                id: this.nextOrderId++,
+                                price: newAskPrice,
+                                size: Math.random() * 40 + 20,
+                                timestamp: Date.now(),
+                                side: 'ask'
+                            };
+
+                            let askLevel = this.currentOrderbook.asks.find(level => Math.abs(level.price - newAskPrice) < 0.0005);
+                            if (!askLevel) {
+                                askLevel = { price: newAskPrice, orders: [] };
+                                this.currentOrderbook.asks.push(askLevel);
+                                this.currentOrderbook.asks.sort((a, b) => a.price - b.price);
+                            }
+                            askLevel.orders.push(order);
+                        }
+                    }
+                }
+            }
+
+            cancelOrder() {
+                const allLevels = [...this.currentOrderbook.bids, ...this.currentOrderbook.asks];
+                const nonEmptyLevels = allLevels.filter(level => level.orders.length > 0);
+
+                if (nonEmptyLevels.length === 0) return;
+
+                // Bias toward canceling orders further from spread
+                const weights = nonEmptyLevels.map((level, index) => {
+                    const bestBid = this.currentOrderbook.bids[0]?.price || 0;
+                    const bestAsk = this.currentOrderbook.asks[0]?.price || 999;
+
+                    const isBid = this.currentOrderbook.bids.includes(level);
+                    const distanceFromBest = isBid ?
+                        (bestBid - level.price) / this.priceStep :
+                        (level.price - bestAsk) / this.priceStep;
+
+                    return 1 + distanceFromBest * 0.1; // Higher weight for further levels
+                });
+
+                const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+                const random = Math.random() * totalWeight;
+
+                let cumWeight = 0;
+                let selectedLevel;
+                for (let i = 0; i < nonEmptyLevels.length; i++) {
+                    cumWeight += weights[i];
+                    if (random <= cumWeight) {
+                        selectedLevel = nonEmptyLevels[i];
+                        break;
+                    }
+                }
+
+                if (selectedLevel && selectedLevel.orders.length > 0) {
+                    const orderIndex = Math.floor(Math.random() * selectedLevel.orders.length);
+                    selectedLevel.orders.splice(orderIndex, 1);
+
+                    if (selectedLevel.orders.length === 0) {
+                        this.currentOrderbook.bids = this.currentOrderbook.bids.filter(level => level !== selectedLevel);
+                        this.currentOrderbook.asks = this.currentOrderbook.asks.filter(level => level !== selectedLevel);
+                    }
+                }
+            }
+
+            fillOrder() {
+                const topBid = this.currentOrderbook.bids[0];
+                const topAsk = this.currentOrderbook.asks[0];
+
+                const targets = [topBid, topAsk].filter(level => level && level.orders.length > 0);
+                if (targets.length === 0) return;
+
+                const selectedLevel = targets[Math.floor(Math.random() * targets.length)];
+                const order = selectedLevel.orders[0];
+
+                const fillSize = Math.random() < 0.7 ? order.size : Math.random() * order.size;
+                order.size -= fillSize;
+
+                if (order.size <= 0.01) {
+                    selectedLevel.orders.shift();
+                    if (selectedLevel.orders.length === 0) {
+                        this.currentOrderbook.bids = this.currentOrderbook.bids.filter(level => level !== selectedLevel);
+                        this.currentOrderbook.asks = this.currentOrderbook.asks.filter(level => level !== selectedLevel);
+                    }
+                }
+            }
+
+            marketSweep() {
+                const side = Math.random() < 0.5 ? 'buy' : 'sell';
+                const targetLevels = side === 'buy' ? this.currentOrderbook.asks : this.currentOrderbook.bids;
+
+                if (targetLevels.length === 0) return;
+
+                const levelsToSweep = Math.min(1 + Math.floor(Math.random() * 3), targetLevels.length);
+                let remainingSize = Math.random() * 200 + 50;
+
+                for (let i = 0; i < levelsToSweep && remainingSize > 0; i++) {
+                    const level = targetLevels[0];
+                    if (!level || level.orders.length === 0) break;
+
+                    while (level.orders.length > 0 && remainingSize > 0) {
+                        const order = level.orders[0];
+                        const consumeSize = Math.min(order.size, remainingSize);
+
+                        order.size -= consumeSize;
+                        remainingSize -= consumeSize;
+
+                        if (order.size <= 0.01) {
+                            level.orders.shift();
+                        }
+                    }
+
+                    if (level.orders.length === 0) {
+                        if (side === 'buy') {
+                            this.currentOrderbook.asks = this.currentOrderbook.asks.filter(l => l !== level);
+                        } else {
+                            this.currentOrderbook.bids = this.currentOrderbook.bids.filter(l => l !== level);
+                        }
+                    }
+                }
+            }
+
+            calculateBalance() {
+                const bidVolume = this.currentOrderbook.bids.reduce((total, level) =>
+                    total + level.orders.reduce((sum, order) => sum + order.size, 0), 0);
+                const askVolume = this.currentOrderbook.asks.reduce((total, level) =>
+                    total + level.orders.reduce((sum, order) => sum + order.size, 0), 0);
+
+                const bidLevels = this.currentOrderbook.bids.length;
+                const askLevels = this.currentOrderbook.asks.length;
+
+                const volumeImbalance = bidVolume - askVolume;
+                const levelImbalance = bidLevels - askLevels;
+                const totalVolume = bidVolume + askVolume;
+
+                return {
+                    bidVolume,
+                    askVolume,
+                    bidLevels,
+                    askLevels,
+                    volumeImbalance,
+                    levelImbalance,
+                    volumeImbalanceRatio: totalVolume > 0 ? volumeImbalance / totalVolume : 0,
+                    levelImbalanceRatio: (bidLevels + askLevels) > 0 ? levelImbalance / (bidLevels + askLevels) : 0
+                };
+            }
+
+            maintainOrderbook() {
+                // Remove empty levels
+                this.currentOrderbook.bids = this.currentOrderbook.bids.filter(level => level.orders.length > 0);
+                this.currentOrderbook.asks = this.currentOrderbook.asks.filter(level => level.orders.length > 0);
+
+                // Limit levels
+                if (this.currentOrderbook.bids.length > this.settings.maxPriceLevels) {
+                    this.currentOrderbook.bids = this.currentOrderbook.bids.slice(0, this.settings.maxPriceLevels);
+                }
+                if (this.currentOrderbook.asks.length > this.settings.maxPriceLevels) {
+                    this.currentOrderbook.asks = this.currentOrderbook.asks.slice(0, this.settings.maxPriceLevels);
+                }
+
+                // Ensure minimum spread
+                if (this.currentOrderbook.bids.length > 0 && this.currentOrderbook.asks.length > 0) {
+                    const bestBid = this.currentOrderbook.bids[0];
+                    const bestAsk = this.currentOrderbook.asks[0];
+
+                    if (bestBid.price >= bestAsk.price) {
+                        if (Math.random() < 0.5) {
+                            this.currentOrderbook.bids.shift();
+                        } else {
+                            this.currentOrderbook.asks.shift();
+                        }
+                    }
+                }
+
+                // Ensure some liquidity exists
+                if (this.currentOrderbook.bids.length === 0) {
+                    this.currentOrderbook.bids.push({
+                        price: parseFloat((this.basePrice - this.settings.spreadSize / 2).toFixed(3)),
+                        orders: [{
+                            id: this.nextOrderId++,
+                            price: parseFloat((this.basePrice - this.settings.spreadSize / 2).toFixed(3)),
+                            size: Math.random() * 50 + 10,
+                            timestamp: Date.now(),
+                            side: 'bid'
+                        }]
+                    });
+                }
+
+                if (this.currentOrderbook.asks.length === 0) {
+                    this.currentOrderbook.asks.push({
+                        price: parseFloat((this.basePrice + this.settings.spreadSize / 2).toFixed(3)),
+                        orders: [{
+                            id: this.nextOrderId++,
+                            price: parseFloat((this.basePrice + this.settings.spreadSize / 2).toFixed(3)),
+                            size: Math.random() * 50 + 10,
+                            timestamp: Date.now(),
+                            side: 'ask'
+                        }]
+                    });
+                }
+
+                this.sortOrderbook();
+            }
+
+            sortOrderbook() {
+                this.currentOrderbook.bids.sort((a, b) => b.price - a.price); // Descending
+                this.currentOrderbook.asks.sort((a, b) => a.price - b.price); // Ascending
+            }
+
+            getTotalOrders() {
+                return [...this.currentOrderbook.bids, ...this.currentOrderbook.asks]
+                    .reduce((total, level) => total + level.orders.length, 0);
+            }
+
+            getCurrentSnapshot() {
+                return {
+                    timestamp: performance.now(),
+                    bids: [...this.currentOrderbook.bids],
+                    asks: [...this.currentOrderbook.asks]
+                };
+            }
+        }
+
+        // Main demo application
+        class L3ToL2Demo {
+            constructor() {
+                this.renderer = new CombinedL2TextureRenderer(document.getElementById('threejs-container'));
+                this.generator = new EnhancedL3DataGenerator();
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+                this.l2UpdateCount = 0;
+                this.lastL2Snapshot = null;
+
+                this.setupUI();
+                this.startAnimationLoop();
+            }
+
+            setupUI() {
+                document.getElementById('startBtn').onclick = () => {
+                    this.generator.start((l3Orderbook) => {
+                        const l2Data = this.renderer.updateL2Data(l3Orderbook);
+                        this.l2UpdateCount++;
+                        this.lastL2Snapshot = l2Data;
+                    });
+                };
+
+                document.getElementById('stopBtn').onclick = () => {
+                    this.generator.stop();
+                };
+
+                document.getElementById('resetBtn').onclick = () => {
+                    this.generator.reset();
+                    this.l2UpdateCount = 0;
+                    this.lastL2Snapshot = null;
+                };
+
+                this.setupSliders();
+                this.setupL3GeneratorControls();
+            }
+
+            setupL3GeneratorControls() {
+                const controls = [
+                    { id: 'eventsPerSecond', setting: 'eventsPerSecond', format: (v) => parseInt(v), isRate: true },
+                    { id: 'midPrice', setting: 'midPrice', format: (v) => parseFloat(v).toFixed(1) },
+                    { id: 'spreadSize', setting: 'spreadSize', format: (v) => parseFloat(v).toFixed(3) },
+                    { id: 'minSpread', setting: 'minSpread', format: (v) => parseFloat(v).toFixed(3) },
+                    { id: 'maxPriceLevels', setting: 'maxPriceLevels', format: (v) => parseInt(v) },
+                    { id: 'minOrderSize', setting: 'minOrderSize', format: (v) => parseInt(v) },
+                    { id: 'maxOrderSize', setting: 'maxOrderSize', format: (v) => parseInt(v) },
+                    { id: 'marketMakingWeight', setting: 'marketMakingWeight', format: (v) => parseInt(v) },
+                    { id: 'nearSpreadBias', setting: 'nearSpreadBias', format: (v) => parseInt(v) },
+                    { id: 'balanceStrength', setting: 'balanceStrength', format: (v) => parseInt(v) },
+                    { id: 'addOrderWeight', setting: 'addOrderWeight', format: (v) => parseInt(v) },
+                    { id: 'cancelOrderWeight', setting: 'cancelOrderWeight', format: (v) => parseInt(v) },
+                    { id: 'fillOrderWeight', setting: 'fillOrderWeight', format: (v) => parseInt(v) },
+                    { id: 'marketSweepWeight', setting: 'marketSweepWeight', format: (v) => parseInt(v) }
+                ];
+
+                controls.forEach(control => {
+                    const slider = document.getElementById(control.id);
+                    const valueDisplay = document.getElementById(control.id + 'Value');
+
+                    if (slider && valueDisplay) {
+                        slider.addEventListener('input', (e) => {
+                            const value = parseFloat(e.target.value);
+                            const formattedValue = control.format(value);
+                            valueDisplay.textContent = formattedValue;
+
+                            if (control.isRate) {
+                                this.generator.setEventRate(value);
+                            } else {
+                                this.generator.updateSettings({ [control.setting]: value });
+                            }
+                        });
+                    }
+                });
+            }
+
+            setupSliders() {
+                const controls = [
+                    { id: 'heightScale', valueId: 'heightScaleValue', callback: (v) => this.renderer.setHeightScale(v) },
+                    { id: 'smoothing', valueId: 'smoothingValue', callback: (v) => this.renderer.setSmoothing(v) },
+                    { id: 'timeWindow', valueId: 'timeWindowValue', callback: (v) => this.renderer.setTimeWindow(v) },
+                    { id: 'resolution', valueId: 'resolutionValue', callback: (v) => this.renderer.setResolution(v) }
+                ];
+
+                controls.forEach(control => {
+                    const slider = document.getElementById(control.id);
+                    const valueDisplay = document.getElementById(control.valueId);
+
+                    if (slider && valueDisplay) {
+                        slider.addEventListener('input', (e) => {
+                            const value = parseFloat(e.target.value);
+                            valueDisplay.textContent = value;
+                            control.callback(value);
+                        });
+                    }
+                });
+            }
+
+            startAnimationLoop() {
+                const animate = (timestamp) => {
+                    this.frameCount++;
+
+                    // Render 3D scene
+                    this.renderer.render();
+
+                    // Update UI every 30 frames
+                    if (this.frameCount % 30 === 0) {
+                        this.updateStats(timestamp);
+                    }
+
+                    requestAnimationFrame(animate);
+                };
+
+                requestAnimationFrame(animate);
+            }
+
+            updateStats(timestamp) {
+                const fps = Math.round(1000 / (timestamp - this.lastTime) * 30);
+                this.lastTime = timestamp;
+
+                const stats = this.renderer.getStats();
+
+                document.getElementById('l3Events').textContent = this.generator.eventCount;
+                document.getElementById('l2Updates').textContent = this.l2UpdateCount;
+                document.getElementById('totalOrders').textContent = this.generator.getTotalOrders();
+                document.getElementById('eventRate').textContent = this.generator.isRunning ?
+                    `${this.generator.eventsPerSecond.toFixed(1)}/s` : '0.0/s';
+                document.getElementById('verticesCount').textContent = stats.vertices.toLocaleString();
+                document.getElementById('fps').textContent = fps;
+
+                // Update orderbook table
+                this.updateOrderbookTable();
+            }
+
+            updateOrderbookTable() {
+                if (!this.lastL2Snapshot) return;
+
+                const bids = this.lastL2Snapshot.bids.slice(0, 15);
+                const asks = this.lastL2Snapshot.asks.slice(0, 15);
+
+                const bidTable = document.getElementById('bidTable');
+                const askTable = document.getElementById('askTable');
+
+                if (!bidTable || !askTable) return;
+
+                // Build bid table
+                bidTable.innerHTML = '';
+                bidTable.style.fontSize = '11px';
+                bidTable.style.width = '100%';
+
+                // Header
+                const bidHeader = bidTable.createTHead();
+                const bidHeaderRow = bidHeader.insertRow();
+                bidHeaderRow.style.color = '#8b949e';
+                bidHeaderRow.insertCell().textContent = 'Price';
+                bidHeaderRow.insertCell().textContent = 'Size';
+
+                // Body
+                const bidBody = bidTable.createTBody();
+                bids.forEach(bid => {
+                    const row = bidBody.insertRow();
+                    row.style.color = '#7ee787';
+                    row.insertCell().textContent = bid.price.toFixed(3);
+                    row.insertCell().textContent = bid.size.toFixed(1);
+                });
+
+                // Build ask table
+                askTable.innerHTML = '';
+                askTable.style.fontSize = '11px';
+                askTable.style.width = '100%';
+
+                // Header
+                const askHeader = askTable.createTHead();
+                const askHeaderRow = askHeader.insertRow();
+                askHeaderRow.style.color = '#8b949e';
+                askHeaderRow.insertCell().textContent = 'Price';
+                askHeaderRow.insertCell().textContent = 'Size';
+
+                // Body
+                const askBody = askTable.createTBody();
+                asks.forEach(ask => {
+                    const row = askBody.insertRow();
+                    row.style.color = '#ff7b72';
+                    row.insertCell().textContent = ask.price.toFixed(3);
+                    row.insertCell().textContent = ask.size.toFixed(1);
+                });
+            }
+        }
+
+        // Start the demo
+        window.addEventListener('load', () => {
+            new L3ToL2Demo();
+        });
+    </script>
+</body>
+
+</html>
