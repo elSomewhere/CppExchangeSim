@@ -160,6 +160,23 @@
         #askTable td {
             color: #ff7b72;
         }
+
+        /* Camera control buttons */
+        .camera-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .camera-btn {
+            padding: 4px 8px;
+            font-size: 11px;
+            border: 1px solid #30363d;
+            background: #21262d;
+            border-radius: 4px;
+            cursor: pointer;
+            color: #c9d1d9;
+        }
     </style>
 </head>
 
@@ -200,6 +217,20 @@
                     <label class="control-label">FPS: <span id="fpsValue">30</span></label>
                     <input type="range" id="fpsControl" class="control-input" min="1" max="60" step="1" value="30">
                     <div class="control-hint">1 - 60 frames / second</div>
+                </div>
+
+                <h3 style="color: #58a6ff; font-size: 14px; margin: 15px 0 10px;">Camera Controls</h3>
+                <div class="camera-controls">
+                    <button id="projPerspective" class="camera-btn">Perspective</button>
+                    <button id="projOrtho" class="camera-btn">Orthographic</button>
+                    <button id="alignX" class="camera-btn">Align X</button>
+                    <button id="alignY" class="camera-btn">Align Y</button>
+                    <button id="alignZ" class="camera-btn">Align Z</button>
+                </div>
+                <div class="control-group" style="margin-top: 8px;">
+                    <label class="control-label">Ortho Zoom: <span id="orthoZoomValue">1.0</span>x</label>
+                    <input type="range" id="orthoZoom" class="control-input" min="0.5" max="4" step="0.1" value="1">
+                    <div class="control-hint">Only applies in orthographic mode</div>
                 </div>
             </div>
 
@@ -280,7 +311,23 @@
                 this.container = containerElement;
                 this.scene = new THREE.Scene();
                 this.camera = new THREE.PerspectiveCamera(75, containerElement.clientWidth / containerElement.clientHeight, 0.1, 1000);
-                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                // Prepare both camera types
+                this.perspectiveCamera = this.camera;
+
+                const aspect = containerElement.clientWidth / containerElement.clientHeight;
+                const frustumSize = 100;
+                this.orthographicCamera = new THREE.OrthographicCamera(
+                    ( - frustumSize * aspect) / 2,
+                    (  frustumSize * aspect) / 2,
+                    frustumSize / 2,
+                    -frustumSize / 2,
+                    0.1,
+                    1000
+                );
+                this.orthographicCamera.zoom = 1;
+
+                // Track current projection mode
+                this.mode = 'perspective';
 
                 this.maxInstances = 5000;
                 this.bidMesh = null;
@@ -308,6 +355,7 @@
 
             init() {
                 // Setup renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
                 this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
                 this.renderer.setClearColor(0x0d1117);
                 this.container.appendChild(this.renderer.domElement);
@@ -398,9 +446,22 @@
                 });
 
                 this.renderer.domElement.addEventListener('wheel', (e) => {
-                    const distance = this.camera.position.length();
-                    const newDistance = distance + e.deltaY * 0.1;
-                    this.camera.position.normalize().multiplyScalar(Math.max(10, Math.min(200, newDistance)));
+                    if (this.mode === 'orthographic') {
+                        const current = this.orthographicCamera.zoom;
+                        const newZoom = Math.max(0.5, Math.min(4, current - e.deltaY * 0.001));
+                        this.setOrthoZoom(newZoom);
+                        // keep UI slider in sync if present
+                        const zoomSlider = document.getElementById('orthoZoom');
+                        const zoomValue = document.getElementById('orthoZoomValue');
+                        if (zoomSlider && zoomValue) {
+                            zoomSlider.value = newZoom.toFixed(1);
+                            zoomValue.textContent = newZoom.toFixed(1);
+                        }
+                    } else {
+                        const distance = this.camera.position.length();
+                        const newDistance = distance + e.deltaY * 0.1;
+                        this.camera.position.normalize().multiplyScalar(Math.max(10, Math.min(200, newDistance)));
+                    }
                 });
             }
 
@@ -473,9 +534,60 @@
                 const width = this.container.clientWidth;
                 const height = this.container.clientHeight;
 
-                this.camera.aspect = width / height;
-                this.camera.updateProjectionMatrix();
+                // Update perspective camera
+                this.perspectiveCamera.aspect = width / height;
+                this.perspectiveCamera.updateProjectionMatrix();
+
+                // Update orthographic frustum to maintain aspect
+                const aspect = width / height;
+                const frustumSize = 100;
+                this.orthographicCamera.left = (-frustumSize * aspect) / 2;
+                this.orthographicCamera.right = (frustumSize * aspect) / 2;
+                this.orthographicCamera.top = frustumSize / 2;
+                this.orthographicCamera.bottom = -frustumSize / 2;
+                this.orthographicCamera.updateProjectionMatrix();
+
                 this.renderer.setSize(width, height);
+            }
+
+            /* Public API for camera manipulation */
+            setProjection(mode) {
+                if (mode === this.mode) return;
+                if (mode === 'orthographic') {
+                    // Copy position / rotation from current camera for smoother switch
+                    this.orthographicCamera.position.copy(this.camera.position);
+                    this.orthographicCamera.rotation.copy(this.camera.rotation);
+                    this.orthographicCamera.updateProjectionMatrix();
+                    this.camera = this.orthographicCamera;
+                } else {
+                    this.perspectiveCamera.position.copy(this.camera.position);
+                    this.perspectiveCamera.rotation.copy(this.camera.rotation);
+                    this.camera = this.perspectiveCamera;
+                }
+                this.mode = mode;
+            }
+
+            setOrthoZoom(zoom) {
+                if (this.mode !== 'orthographic') return;
+                this.orthographicCamera.zoom = zoom;
+                this.orthographicCamera.updateProjectionMatrix();
+            }
+
+            alignCamera(axis) {
+                const dist = 100; // fixed distance from origin
+                switch (axis) {
+                    case 'x':
+                        this.camera.position.set(dist, 0, 0);
+                        break;
+                    case 'y':
+                        this.camera.position.set(0, dist, 0);
+                        break;
+                    case 'z':
+                    default:
+                        this.camera.position.set(0, 0, dist);
+                        break;
+                }
+                this.camera.lookAt(0, 0, 0);
             }
         }
 
@@ -722,6 +834,7 @@
                 document.getElementById('fpsValue').textContent = '30';
                 document.getElementById('ringBufferValue').textContent = '1000';
                 document.getElementById('eventRateSliderValue').textContent = '10';
+                document.getElementById('orthoZoomValue').textContent = '1.0';
             }
 
             setupCallbacks() {
@@ -786,6 +899,9 @@
                 // Setup scaling controls
                 this.setupScalingControls();
 
+                // Camera controls
+                this.setupCameraControls();
+
                 // FPS control
                 this.setupFpsControl();
 
@@ -815,6 +931,36 @@
                             this.updateScaling();
                         });
                     }
+                });
+            }
+
+            setupCameraControls() {
+                // Projection buttons
+                document.getElementById('projPerspective').addEventListener('click', () => {
+                    this.renderer3D.setProjection('perspective');
+                });
+                document.getElementById('projOrtho').addEventListener('click', () => {
+                    this.renderer3D.setProjection('orthographic');
+                });
+
+                // Alignment buttons
+                document.getElementById('alignX').addEventListener('click', () => {
+                    this.renderer3D.alignCamera('x');
+                });
+                document.getElementById('alignY').addEventListener('click', () => {
+                    this.renderer3D.alignCamera('y');
+                });
+                document.getElementById('alignZ').addEventListener('click', () => {
+                    this.renderer3D.alignCamera('z');
+                });
+
+                // Ortho zoom slider
+                const zoomSlider = document.getElementById('orthoZoom');
+                const zoomValue = document.getElementById('orthoZoomValue');
+                zoomSlider.addEventListener('input', (e) => {
+                    const val = parseFloat(e.target.value);
+                    zoomValue.textContent = val.toFixed(1);
+                    this.renderer3D.setOrthoZoom(val);
                 });
             }
 
