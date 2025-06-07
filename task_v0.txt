@@ -1,0 +1,292 @@
+---
+
+## 0.  Vocabulary used below
+
+| symbol       | meaning                                           | comment                                         |
+| ------------ | ------------------------------------------------- | ----------------------------------------------- |
+| **t**        | absolute exchange-time in µs or ns                | whatever your feed delivers (must be monotonic) |
+| **Δt**       | duration (difference of two *t*)                  | measured in the same time-units                 |
+| **N**        | ring-buffer capacity ( = max simultaneous cubes ) | fixed at start-up                               |
+| **slot *i*** | the *i*-th cell of every SoA array                | *i ∈ 0…N-1*                                     |
+| **frameId**  | monotonically increasing logical render-frame id  | rolls over at *2³¹* in C++ code                 |
+
+The renderer consumes **Level-3 “book-event” messages** (*one message = one atomic book operation*) delivered as:
+
+```text
+struct L3Message {
+    t              timestamp;     // when the exchange published it
+    Side           side;          // BID / ASK
+    price          p;             // integer ticks
+    volume         v;             // int shares
+}
+```
+
+For the original engine the messages arrive *already grouped by exchange timestamp*:
+
+```text
+vector< pair<t, L3BookEvent> >
+L3BookEvent = { vector<PriceLevel> bids, vector<PriceLevel> asks }
+PriceLevel  = { price, vector<Order> orders } // usually 1 order
+```
+
+For portability you may read “*batch*” wherever the code says *frame*.
+
+---
+
+## 1.  CPU-side data structures (*Struct-of-Arrays, ring-buffer*)
+
+```
+X[N]          int32   // age      – “how long has this order existed so far?”
+XΔ[N]         int32   // lifetime – “for how long (total) will it stay visible?”
+YZ_YZΔ[4*N]   int32   // { Y, Z, ΔY, ΔZ } packed (price, cumVol, priceΔ, volΔ)
+Meta[N]       int32   // 0=free, 1=bid, 2=ask, other flag bits free
+FrameId[N]    int32   // last logical frame that wrote here, -1 = free
+```
+
+*All* arrays are allocated once; **no realloc ever**.
+
+Auxiliary indices:
+
+```
+head                // first slot where new data will be written this frame
+lastWriteCount      // #slots that were written in previous frame
+activeSlots[]       // dense vector of currently alive slot indices
+```
+
+The ring behaviour guarantees every frame touches at most **two contiguous ranges** *(one if there was no wrap-around)*.
+
+---
+
+## 2.  Per-frame algorithm in pseudo-code
+
+```pseudo
+procedure renderFrame(now, newMessages[])
+    Δt = now - lastNow
+
+    # (1) age everything that is still alive -----------------------
+    for i in activeSlots:
+        X[i]  += Δt
+        XΔ[i] += Δt
+    markRangeDirty(X, 0, N)              # whole array
+    markRangeDirty(XΔ, headPrev, lastWriteCount)
+
+    # (2) reset counters for this frame ----------------------------
+    recentInsert[]   = []
+    writeCount       = 0
+    lastEventTime    = lastNow           # will be updated while iterating
+
+    # (3) stream through the fresh exchange messages in time order -
+    for msg in newMessages:
+        gap = msg.timestamp - lastEventTime
+        for i in recentInsert:           # stretch what we inserted *since*
+            XΔ[i] += gap                 # the previous message
+
+        # write slot ------------------------------------------------
+        i = (head + writeCount) mod N
+        if FrameId[i] != -1:             # occupied? overwrite -> invalidate
+             invalidateFrame(FrameId[i])
+
+        # cumulative volume bookkeeping
+        if msg.side == BID:
+            cumVolBid[msg.price] += msg.volume  # O(1) hash or array
+            fillSlot(i,
+                     X   = now - msg.timestamp,
+                     XΔ  = 0,
+                     Y   = msg.price,
+                     Z   = cumVolBid[msg.price],
+                     ΔY  = msg.price - lastPriceBid,
+                     ΔZ  = msg.volume,
+                     meta=1)
+            lastPriceBid = msg.price
+        else:
+            cumVolAsk[msg.price] += msg.volume
+            fillSlot(i, … meta=2)
+            lastPriceAsk = msg.price
+
+        recentInsert.append(i)
+        activeSlots     .append(i)
+        FrameId[i] = frameCounter
+
+        writeCount      += 1
+        lastEventTime    = msg.timestamp
+    end for messages
+
+    # (4) final stretch from lastEventTime up to *now* -------------
+    gap = now - lastEventTime
+    for i in recentInsert:
+        XΔ[i] += gap
+    markRangeDirty(XΔ, head, writeCount)
+
+    # (5) upload dirty ranges (one or two sub-buffer uploads each) -
+    uploadDirty(X)
+    uploadDirty(XΔ)
+    uploadDirty(YZ_YZΔ)
+    uploadDirty(Meta)
+
+    # (6) flip the ring-buffer head, house-keeping -----------------
+    headPrev        = head
+    lastWriteCount  = writeCount
+    head            = (head + writeCount) mod N
+    recentInsert.clear()
+    lastNow         = now
+    frameCounter    = (frameCounter+1) mod 2^31
+end procedure
+```
+
+### 2.1  `fillSlot()` details
+
+```pseudo
+procedure fillSlot(i, X,XΔ,Y,Z,ΔY,ΔZ,meta)
+    X[i]                 = X
+    XΔ[i]                = XΔ          # 0 for a brand-new order
+    YZ_YZΔ[4*i + 0]      = Y
+    YZ_YZΔ[4*i + 1]      = Z
+    YZ_YZΔ[4*i + 2]      = ΔY
+    YZ_YZΔ[4*i + 3]      = ΔZ
+    Meta[i]              = meta
+end procedure
+```
+
+### 2.2  `invalidateFrame(oldId)`
+
+```pseudo
+procedure invalidateFrame(fid)
+    for i in activeSlots:
+        if FrameId[i] == fid:
+            FrameId[i] = -1
+            Meta[i]    = 0
+            remove i from activeSlots
+```
+
+Because `activeSlots` is a dense vector, removing costs *O(m)* where *m* = #slots that used to belong to `fid` – worst-case equal to one frame.  In practice that is rare compared to streaming inserts, and still linear in the same micro-batch size.
+
+---
+
+## 3.  GPU attribute → world coordinate mapping
+
+We treat every cube’s **model-space vertex** as belonging to the unit cube `[-1,+1]³`.
+
+| attribute (int) | purpose                                        | shader conversion to *normalised* form                |
+| --------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| **X**           | age already lived by this order                | `xPos = (X / U.bufferDuration - U.xOffset) / U.xDiff` |
+| **XΔ**          | lifetime remaining                             | `xScale = (XΔ / U.bufferDuration) / U.xDiff`          |
+| **Y**           | price tick                                     | `yPos = (Y - U.yOffset) / U.yDiff`                    |
+| **Z**           | cumulative volume                              | `zPos = (Z - U.zOffset) / U.zDiff`                    |
+| **ΔY**          | price jump since *previous* order at same side | allows optional slope rendering                       |
+| **ΔZ**          | incremental volume of *this* order             | optional use for colour / thickness                   |
+| **Meta**        | 1 = bid (green?), 2 = ask (red?)               | used only in fragment shader                          |
+
+Uniforms (*one per draw call*):
+
+```text
+bufferDuration = N × timeUnitsPerFrame    // int, but pass as float if needed
+{ x,y,z }Offset  = pans the whole scene
+{ x,y,z }Diff    = global zoom per axis
+pointSize        = constant thickness of cube’s walls
+```
+
+### 3.1  Vertex shader core logic (GLSL or WGSL-ish)
+
+```glsl
+float xScale = float(iXDelta) / float(bufferDuration) / u.xDiff;
+float xPos   = float(iX)      / float(bufferDuration);
+xPos         = (xPos - u.xOffset) / u.xDiff;
+
+float yPos   = (float(iYZ.x) - u.yOffset) / u.yDiff;
+float zPos   = (float(iYZ.y) - u.zOffset) / u.zDiff;
+
+vec3 local = inPosition;          // [-1,+1]³
+vec3 world;
+world.x = local.x * xScale + (xPos - 0.5 * xScale);   // shift cube so its
+world.y = local.y * u.pointSize + yPos;               // centre aligns at
+world.z = local.z * u.pointSize + zPos;               // (xPos,yPos,zPos)
+gl_Position = u.projection * u.view * vec4(world, 1.);
+```
+
+*The subtle “**– 0.5 × xScale**” shift* moves each cube so its **left face** sits at the time the order was created and its **right face** at the time it will be removed, thus visually encoding lifetime.
+Without that shift the cube would expand in both directions when *XΔ* grows, making the depiction misleading.
+
+---
+
+## 4.  How scaling/stacking of orders works
+
+### 4.1  Along **X (time)**
+
+* **Length** = `XΔ` **/ bufferDuration**
+  – grows every frame (“stretch”) until the order is cancelled or overwritten.
+* **Left origin** = `X` **/ bufferDuration**
+  – increases every frame by the same Δt as *X*.
+
+### 4.2  Along **Y (price)**
+
+* Every new order inherits **absolute price tick** in `Y`.
+* The **relative step from the previous order** on the same side is stored in `ΔY`; you can feed that to colour or edge width if you want to display gaps between price levels.
+
+### 4.3  Along **Z (volume)**
+
+* `cumVolBid[p]` (or Ask) is the running sum of all volumes **at this price, side, that are *older* or *equal* to this order**.
+  That value is written into `Z`; therefore the cube’s bottom touches the previous stack top and its top represents the new cumulative height.
+* Cube **height** can be constant (`pointSize`) or proportional to `ΔZ` (¤ uncomment the alternative shader line).
+
+Because every cube stacks on the already-existing top, there is **no need to recompute all later cubes** when a new one is added – you only add *ΔZ* to the running sum.  That is the crucial trick that keeps insertion *O(1)*.
+
+---
+
+## 5.  Bandwidth & GPU-side considerations
+
+* **Dirty-range uploads** require two calls at worst:
+
+  1. `subData(start, lenToEnd)`
+  2. `subData(0, remaining)` if wrapped.
+* Assuming 10 000 concurrent cubes (`N=10 k`) the raw VBO size is
+  `N×(1+1+4+1)×4 B = 280 kB`, easily updated every 16 ms.
+* Instanced draw call:
+
+  ```cpp
+  drawElementsInstanced(cubeIndexCount, N, …);
+  ```
+
+  – *one* pipeline change per frame.
+
+---
+
+## 6.  Checklist to reproduce in JavaScript / three.js
+
+1. **Allocate** `Int32Array`s once: `X`, `XΔ`, `YZΔ`, `Meta`.
+2. Wrap each in a `THREE.InstancedBufferAttribute`.
+
+   ```js
+   attrX.setUsage(THREE.DynamicDrawUsage);
+   ```
+3. Keep the ring-buffer indices `head`, `lastWriteCount`, `activeSlots[]` exactly as in §2.
+4. In every render tick:
+
+   * run the algorithm §2, modifying the JS `Int32Array`s directly;
+   * call
+
+     ```js
+     attrX.updateRange.set(0, N);
+     attrX.needsUpdate = true;
+     attrXDelta.updateRange.set(head, writeCount);
+     attrXDelta.needsUpdate = true;
+     // …same for YZΔ, Meta
+     ```
+5. Provide the shader in `RawShaderMaterial`; adapt the WGSL maths literally to GLSL100 or GLSL300.
+6. Tune uniforms (`xOffset`, `xDiff`, etc.) to pan / zoom without touching the buffers.
+7. Draw with one `THREE.InstancedMesh`.
+
+---
+
+### Why this stays fast regardless of language
+
+* **CPU cost ∝ newMessages**, not active instances.
+* **GPU cost = one instanced draw**.
+* **PCIe / WebGPU uploads only touch dirty ranges**.
+* **No garbage collection pressure** – arrays stay the same length forever.
+
+Replicate these invariants in any environment (TypeScript + regl, Rust + wgpu, Python + moderngl, …) and the visualisation will scale to millions of messages per second on commodity hardware.
+
+---
+
+That is every moving part, every offset, and every scaling term you need to clone the original engine with byte-for-byte fidelity – just swap the buffer-update API calls for the equivalents in your target framework.
+

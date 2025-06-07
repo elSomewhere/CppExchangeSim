@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L2 3D Orderbook Tracer Demo</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            height: 90vh;
+        }
+
+        .panel {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            overflow: auto;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .button-start {
+            background: #238636;
+            color: white;
+        }
+
+        .button-stop {
+            background: #da3633;
+            color: white;
+        }
+
+        .button-reset {
+            background: #1f6feb;
+            color: white;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #30363d;
+        }
+
+        .stat-label {
+            color: #8b949e;
+            font-size: 12px;
+        }
+
+        .stat-value {
+            color: #58a6ff;
+            font-weight: 600;
+        }
+
+        .voxel-list {
+            height: 400px;
+            overflow-y: auto;
+            font-size: 11px;
+        }
+
+        .voxel-item {
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-radius: 3px;
+            border-left: 3px solid;
+        }
+
+        .voxel-bid {
+            border-left-color: #7ee787;
+            background: rgba(46, 160, 67, 0.1);
+        }
+
+        .voxel-ask {
+            border-left-color: #ff7b72;
+            background: rgba(248, 81, 73, 0.1);
+        }
+
+        .voxel-active {
+            opacity: 1.0;
+        }
+
+        .voxel-historical {
+            opacity: 0.6;
+        }
+
+        .log {
+            height: 200px;
+            overflow-y: auto;
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #30363d;
+            font-size: 11px;
+        }
+
+        .control-group {
+            margin-bottom: 8px;
+        }
+        .control-label {
+            display: block;
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: #c9d1d9;
+        }
+        .control-input {
+            width: 100%;
+        }
+        .control-hint {
+            font-size: 10px;
+            color: #8b949e;
+        }
+
+        .ob-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        .ob-table th, .ob-table td {
+            padding: 2px 4px;
+            text-align: right;
+        }
+        .ob-table th {
+            color: #8b949e;
+            font-weight: 600;
+            border-bottom: 1px solid #30363d;
+        }
+        #bidTable td {
+            color: #7ee787;
+        }
+        #askTable td {
+            color: #ff7b72;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>L2 Orderbook 3D Tracer Demo</h1>
+
+    <div class="container">
+        <div class="panel">
+            <h2>3D Voxel Visualization</h2>
+            <div id="threejs-container"
+                style="width: 100%; height: 300px; border: 1px solid #30363d; border-radius: 4px; background: #000;">
+            </div>
+
+            <div style="margin-top: 15px;">
+                <h3 style="color: #58a6ff; font-size: 14px; margin-bottom: 10px;">Axis Scaling Controls</h3>
+                <div class="control-group">
+                    <label class="control-label">Price Scale (X): <span id="priceScaleValue">10</span>x</label>
+                    <input type="range" id="priceScale" class="control-input" min="1" max="1000" step="1" value="10">
+                    <div class="control-hint">1x - 1000x scaling</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Volume Scale (Y): <span id="volumeScaleValue">0.5</span>x</label>
+                    <input type="range" id="volumeScale" class="control-input" min="0.1" max="5" step="0.1" value="0.5">
+                    <div class="control-hint">0.1x - 5x scaling</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Time Scale (Z): <span id="timeScaleValue">0.01</span>x</label>
+                    <input type="range" id="timeScale" class="control-input" min="0.001" max="0.1" step="0.001"
+                        value="0.01">
+                    <div class="control-hint">0.001x - 0.1x scaling</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Voxel Width: <span id="voxelWidthValue">0.5</span></label>
+                    <input type="range" id="voxelWidth" class="control-input" min="0.1" max="5" step="0.1" value="0.5">
+                    <div class="control-hint">Individual voxel thickness</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">FPS: <span id="fpsValue">30</span></label>
+                    <input type="range" id="fpsControl" class="control-input" min="1" max="60" step="1" value="30">
+                    <div class="control-hint">1 - 60 frames / second</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 10px; font-size: 11px; color: #8b949e;">
+                <strong>Controls:</strong> Mouse to rotate • Scroll to zoom •
+                <strong>Axes:</strong> X=Price, Y=Volume, Z=Time
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>L2 Generator & Controls</h2>
+
+            <div class="controls">
+                <button id="startBtn" class="button button-start">Start</button>
+                <button id="stopBtn" class="button button-stop">Stop</button>
+                <button id="resetBtn" class="button button-reset">Reset</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-label">L2 Events</div>
+                    <div class="stat-value" id="l2Events">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Event Rate</div>
+                    <div class="stat-value" id="eventRate">0.0/s</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Active Voxels</div>
+                    <div class="stat-value" id="activeVoxels">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Historical Voxels</div>
+                    <div class="stat-value" id="historicalVoxels">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Created</div>
+                    <div class="stat-value" id="totalVoxels">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Current Time</div>
+                    <div class="stat-value" id="currentTime">0</div>
+                </div>
+            </div>
+
+            <div class="control-group" style="margin-top: 10px;">
+                <label class="control-label">Ring Buffer Size: <span id="ringBufferValue">1000</span></label>
+                <input type="range" id="ringBufferSize" class="control-input" min="100" max="100000" step="1000" value="1000">
+                <div class="control-hint">Max historical voxels to keep</div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Event Rate: <span id="eventRateSliderValue">10</span>/s</label>
+                <input type="range" id="eventRateSlider" class="control-input" min="1" max="100" step="1" value="10">
+                <div class="control-hint">Events generated per second</div>
+            </div>
+
+            <h3 style="margin-top:15px;">Event Log</h3>
+            <div class="log" id="eventLog"></div>
+        </div>
+
+        <div class="panel">
+            <h2>Orderbook</h2>
+            <p style="color: #8b949e; font-size: 12px;">Top 20 price levels for bids and asks</p>
+
+            <div style="display:flex; gap: 10px;">
+                <table class="ob-table" id="bidTable"></table>
+                <table class="ob-table" id="askTable"></table>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // 3D Voxel Renderer using Three.js
+        class VoxelRenderer3D {
+            constructor(containerElement) {
+                this.container = containerElement;
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, containerElement.clientWidth / containerElement.clientHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+
+                this.maxInstances = 5000;
+                this.bidMesh = null;
+                this.askMesh = null;
+                this.timeOffset = 0; // For time axis positioning
+                this.priceOffset = 100; // Center price around 0
+
+                // Scaling factors for each axis
+                this.scales = {
+                    price: 10,    // X-axis scaling
+                    volume: 0.5,  // Y-axis scaling  
+                    time: 0.01,   // Z-axis scaling
+                    voxelWidth: 0.5 // Individual voxel width
+                };
+
+                this.init();
+            }
+
+            setScales(priceScale, volumeScale, timeScale, voxelWidth) {
+                this.scales.price = priceScale;
+                this.scales.volume = volumeScale;
+                this.scales.time = timeScale;
+                this.scales.voxelWidth = voxelWidth;
+            }
+
+            init() {
+                // Setup renderer
+                this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
+                this.renderer.setClearColor(0x0d1117);
+                this.container.appendChild(this.renderer.domElement);
+
+                // Setup camera
+                this.camera.position.set(50, 50, 50);
+                this.camera.lookAt(0, 0, 0);
+
+                // Add lights
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+                this.scene.add(ambientLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(50, 50, 50);
+                this.scene.add(directionalLight);
+
+                // Add axes helper with labels
+                const axesHelper = new THREE.AxesHelper(20);
+                this.scene.add(axesHelper);
+
+                // Add price axis labels (simplified)
+                this.addAxisLabel('Price →', 25, 0, 0, 0x58a6ff);
+                this.addAxisLabel('Volume ↑', 0, 25, 0, 0x58a6ff);
+                this.addAxisLabel('Time →', 0, 0, 25, 0x58a6ff);
+
+                // Add grid
+                const gridHelper = new THREE.GridHelper(100, 20, 0x333333, 0x333333);
+                this.scene.add(gridHelper);
+
+                // Add simple orbit controls (mouse interaction)
+                this.setupControls();
+
+                // Handle window resize
+                window.addEventListener('resize', () => this.onWindowResize());
+            }
+
+            addAxisLabel(text, x, y, z, color) {
+                // Create a simple text sprite (placeholder - in real implementation you'd use proper text rendering)
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = 200;
+                canvas.height = 50;
+                context.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+                context.font = '16px Arial';
+                context.fillText(text, 10, 30);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+                const sprite = new THREE.Sprite(spriteMaterial);
+                sprite.position.set(x, y, z);
+                sprite.scale.set(10, 2.5, 1);
+                this.scene.add(sprite);
+            }
+
+            setupControls() {
+                let isMouseDown = false;
+                let mouseX = 0;
+                let mouseY = 0;
+
+                this.renderer.domElement.addEventListener('mousedown', (e) => {
+                    isMouseDown = true;
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                });
+
+                this.renderer.domElement.addEventListener('mousemove', (e) => {
+                    if (!isMouseDown) return;
+
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+
+                    // Rotate camera around the scene
+                    const spherical = new THREE.Spherical();
+                    spherical.setFromVector3(this.camera.position);
+                    spherical.theta -= deltaX * 0.01;
+                    spherical.phi += deltaY * 0.01;
+                    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+
+                    this.camera.position.setFromSpherical(spherical);
+                    this.camera.lookAt(0, 0, 0);
+
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                });
+
+                this.renderer.domElement.addEventListener('mouseup', () => {
+                    isMouseDown = false;
+                });
+
+                this.renderer.domElement.addEventListener('wheel', (e) => {
+                    const distance = this.camera.position.length();
+                    const newDistance = distance + e.deltaY * 0.1;
+                    this.camera.position.normalize().multiplyScalar(Math.max(10, Math.min(200, newDistance)));
+                });
+            }
+
+            updateVoxels(voxelData) {
+                const currentTime = voxelData.currentTime;
+                this.timeOffset = currentTime - 5000;
+
+                const allVoxels = [...voxelData.active, ...voxelData.historical.slice(-100)];
+
+                // Ensure InstancedMeshes exist
+                this.ensureInstancedMeshes();
+
+                let bidIndex = 0;
+                let askIndex = 0;
+
+                const dummy = new THREE.Object3D();
+
+                const updateInstance = (mesh, index, voxel) => {
+                    const x = (voxel.price - this.priceOffset) * this.scales.price;
+                    const y = voxel.volume * this.scales.volume;
+                    const z = (voxel.startTime - this.timeOffset) * this.scales.time;
+
+                    const width = this.scales.voxelWidth;
+                    const height = voxel.volume * this.scales.volume;
+                    const depth = Math.max(0.1, voxel.duration * this.scales.time);
+
+                    dummy.position.set(x, y / 2, z + depth / 2);
+                    dummy.scale.set(width, height, depth);
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(index, dummy.matrix);
+                };
+
+                allVoxels.forEach(voxel => {
+                    if (voxel.side === 'bid' && bidIndex < this.maxInstances) {
+                        updateInstance(this.bidMesh, bidIndex++, voxel);
+                    } else if (voxel.side === 'ask' && askIndex < this.maxInstances) {
+                        updateInstance(this.askMesh, askIndex++, voxel);
+                    }
+                });
+
+                this.bidMesh.count = bidIndex;
+                this.askMesh.count = askIndex;
+                this.bidMesh.instanceMatrix.needsUpdate = true;
+                this.askMesh.instanceMatrix.needsUpdate = true;
+            }
+
+            ensureInstancedMeshes() {
+                if (this.bidMesh) return; // already created
+
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+
+                const bidMaterial = new THREE.MeshLambertMaterial({ color: 0x7ee787 });
+                const askMaterial = new THREE.MeshLambertMaterial({ color: 0xff7b72 });
+
+                this.bidMesh = new THREE.InstancedMesh(geometry, bidMaterial, this.maxInstances);
+                this.askMesh = new THREE.InstancedMesh(geometry, askMaterial, this.maxInstances);
+
+                this.scene.add(this.bidMesh);
+                this.scene.add(this.askMesh);
+            }
+
+            render() {
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            onWindowResize() {
+                const width = this.container.clientWidth;
+                const height = this.container.clientHeight;
+
+                this.camera.aspect = width / height;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(width, height);
+            }
+        }
+
+        // Include the L2OrderbookTracer class from the previous artifact
+        class L2OrderbookTracer {
+            constructor(config = {}) {
+                this.config = {
+                    priceResolution: 0.001,
+                    maxPriceLevels: 100,
+                    timeResolution: 0.016,
+                    maxTimeSlices: 1000,
+                    volumeThreshold: 0.1,
+                    ...config
+                };
+
+                this.currentState = new Map();
+                this.activeVoxels = new Map();
+                this.historicalVoxels = [];
+                this.eventBuffer = [];
+                this.currentTime = 0;
+                this.lastFrameTime = 0;
+                this.nextVoxelId = 0;
+            }
+
+            addL2Event(snapshot) {
+                this.eventBuffer.push({
+                    timestamp: snapshot.timestamp,
+                    bids: [...snapshot.bids],
+                    asks: [...snapshot.asks]
+                });
+            }
+
+            processEventsForFrame(currentFrameTime) {
+                this.currentTime = currentFrameTime;
+                const deltaTime = currentFrameTime - this.lastFrameTime;
+
+                this.extendActiveVoxels(deltaTime);
+
+                while (this.eventBuffer.length > 0) {
+                    const event = this.eventBuffer.shift();
+                    this.processL2Event(event);
+                }
+
+                this.lastFrameTime = currentFrameTime;
+            }
+
+            extendActiveVoxels(deltaTime) {
+                for (const voxel of this.activeVoxels.values()) {
+                    voxel.duration += deltaTime;
+                    voxel.endTime = this.currentTime;
+                }
+            }
+
+            processL2Event(event) {
+                const newState = new Map();
+
+                for (const bid of event.bids) {
+                    const priceKey = this.getPriceKey(bid.price);
+                    newState.set(`bid_${priceKey}`, {
+                        side: 'bid',
+                        price: bid.price,
+                        volume: bid.size,
+                        timestamp: event.timestamp
+                    });
+                }
+
+                for (const ask of event.asks) {
+                    const priceKey = this.getPriceKey(ask.price);
+                    newState.set(`ask_${priceKey}`, {
+                        side: 'ask',
+                        price: ask.price,
+                        volume: ask.size,
+                        timestamp: event.timestamp
+                    });
+                }
+
+                this.updateVoxelsFromStateChange(newState, event.timestamp);
+                this.currentState = newState;
+            }
+
+            updateVoxelsFromStateChange(newState, timestamp) {
+                const stillActive = new Set();
+
+                for (const [key, newLevel] of newState) {
+                    const currentLevel = this.currentState.get(key);
+
+                    if (!currentLevel ||
+                        Math.abs(currentLevel.volume - newLevel.volume) > this.config.volumeThreshold) {
+
+                        if (this.activeVoxels.has(key)) {
+                            this.finalizeVoxel(key, timestamp);
+                        }
+
+                        if (newLevel.volume > this.config.volumeThreshold) {
+                            this.createNewVoxel(key, newLevel, timestamp);
+                            stillActive.add(key);
+                        }
+                    } else {
+                        stillActive.add(key);
+                    }
+                }
+
+                for (const key of this.activeVoxels.keys()) {
+                    if (!stillActive.has(key)) {
+                        this.finalizeVoxel(key, timestamp);
+                    }
+                }
+            }
+
+            createNewVoxel(key, level, timestamp) {
+                const voxel = {
+                    id: this.nextVoxelId++,
+                    key: key,
+                    side: level.side,
+                    price: level.price,
+                    volume: level.volume,
+                    startTime: timestamp,
+                    endTime: timestamp,
+                    duration: 0,
+                    isActive: true
+                };
+
+                this.activeVoxels.set(key, voxel);
+                this.logEvent(`Created voxel ${voxel.id}: ${level.side} $${level.price.toFixed(3)} vol=${level.volume.toFixed(1)}`);
+            }
+
+            finalizeVoxel(key, timestamp) {
+                const voxel = this.activeVoxels.get(key);
+                if (voxel) {
+                    voxel.isActive = false;
+                    voxel.endTime = timestamp;
+                    this.historicalVoxels.push(voxel);
+                    this.activeVoxels.delete(key);
+                    this.logEvent(`Finalized voxel ${voxel.id}: duration=${voxel.duration.toFixed(0)}ms`);
+                }
+            }
+
+            getPriceKey(price) {
+                return Math.round(price / this.config.priceResolution) * this.config.priceResolution;
+            }
+
+            getAllVoxels() {
+                return {
+                    active: Array.from(this.activeVoxels.values()),
+                    historical: this.historicalVoxels,
+                    currentTime: this.currentTime
+                };
+            }
+
+            getStats() {
+                return {
+                    activeVoxels: this.activeVoxels.size,
+                    historicalVoxels: this.historicalVoxels.length,
+                    eventsInBuffer: this.eventBuffer.length,
+                    currentTime: this.currentTime,
+                    totalVoxelsCreated: this.nextVoxelId
+                };
+            }
+
+            cleanupOldVoxels() {
+                // Always enforce ring-buffer size (maxTimeSlices)
+                if (this.config.maxTimeSlices && this.historicalVoxels.length > this.config.maxTimeSlices) {
+                    this.historicalVoxels = this.historicalVoxels.slice(-this.config.maxTimeSlices);
+                }
+            }
+
+            logEvent(message) {
+                const log = document.getElementById('eventLog');
+                if (!log) return;
+
+                // Initialise per-element buffer metadata once
+                if (!log.__buffer) {
+                    log.__buffer = [];
+                    log.__flushScheduled = false;
+                    // Keep at most this many lines in the log DOM at any time
+                    log.__maxLines = 1000;
+                }
+
+                const timestamp = new Date().toLocaleTimeString();
+                log.__buffer.push(`[${timestamp}] ${message}`);
+
+                // Schedule a single flush on the next animation frame
+                if (!log.__flushScheduled) {
+                    log.__flushScheduled = true;
+                    requestAnimationFrame(() => {
+                        const frag = document.createDocumentFragment();
+                        for (const txt of log.__buffer) {
+                            const div = document.createElement('div');
+                            div.textContent = txt;
+                            div.style.color = '#58a6ff';
+                            frag.appendChild(div);
+                        }
+
+                        log.appendChild(frag);
+
+                        // Trim old nodes to keep DOM size bounded
+                        while (log.childNodes.length > log.__maxLines) {
+                            log.removeChild(log.firstChild);
+                        }
+
+                        log.scrollTop = log.scrollHeight;
+
+                        // Reset buffer & schedule flag
+                        log.__buffer.length = 0;
+                        log.__flushScheduled = false;
+                    });
+                }
+            }
+        }
+
+        // Demo Application
+        class TracerDemo {
+            constructor() {
+                // Use Web Worker for background L2 generation
+                this.worker = new Worker('l2GeneratorWorker.js');
+                this.eventCount = 0;
+                this.lastSnapshot = null;
+                this.targetFps = 30;
+                this.lastRenderTime = 0;
+                this.tracer = new L2OrderbookTracer({
+                    priceResolution: 0.01,
+                    volumeThreshold: 1.0
+                });
+                this.eventRate = 10; // default events per second
+
+                this.renderer3D = new VoxelRenderer3D(document.getElementById('threejs-container'));
+
+                this.frameCount = 0;
+                this.isRunning = false;
+
+                this.setupCallbacks();
+                this.setupUI();
+                this.startAnimationLoop();
+
+                // Initialize scaling control displays
+                this.initializeScalingDisplays();
+            }
+
+            initializeScalingDisplays() {
+                document.getElementById('priceScaleValue').textContent = '10';
+                document.getElementById('volumeScaleValue').textContent = '0.5';
+                document.getElementById('timeScaleValue').textContent = '0.010';
+                document.getElementById('voxelWidthValue').textContent = '0.5';
+                document.getElementById('fpsValue').textContent = '30';
+                document.getElementById('ringBufferValue').textContent = '1000';
+                document.getElementById('eventRateSliderValue').textContent = '10';
+            }
+
+            setupCallbacks() {
+                this.worker.onmessage = (event) => {
+                    if (event.data.type === 'snapshot') {
+                        this.eventCount++;
+
+                        const floatArr = new Float32Array(event.data.buffer);
+                        const bids = [];
+                        const asks = [];
+                        for (let i = 0; i < event.data.count; i++) {
+                            const price = floatArr[i * 3];
+                            const size = floatArr[i * 3 + 1];
+                            const sideFlag = floatArr[i * 3 + 2];
+                            const levelObj = { price, size, side: sideFlag === 0 ? 'bid' : 'ask' };
+                            if (sideFlag === 0) bids.push(levelObj);
+                            else asks.push(levelObj);
+                        }
+
+                        const snapshotObj = {
+                            timestamp: event.data.timestamp,
+                            bids,
+                            asks
+                        };
+
+                        this.lastSnapshot = snapshotObj;
+                        this.tracer.addL2Event(snapshotObj);
+                    }
+                };
+            }
+
+            setupUI() {
+                document.getElementById('startBtn').onclick = () => {
+                    this.worker.postMessage({ type: 'start' });
+                    this.isRunning = true;
+                };
+
+                document.getElementById('stopBtn').onclick = () => {
+                    this.worker.postMessage({ type: 'stop' });
+                    this.isRunning = false;
+                };
+
+                document.getElementById('resetBtn').onclick = () => {
+                    this.worker.postMessage({ type: 'reset' });
+                    this.isRunning = false;
+                    this.eventCount = 0;
+                    this.lastSnapshot = null;
+                    this.tracer = new L2OrderbookTracer({
+                        priceResolution: 0.01,
+                        volumeThreshold: 1.0
+                    });
+
+                    // Clear 3D scene
+                    for (const [voxelId, mesh] of this.renderer3D.voxelMeshes) {
+                        this.renderer3D.scene.remove(mesh);
+                    }
+                    this.renderer3D.voxelMeshes.clear();
+
+                    this.setupCallbacks();
+                };
+
+                // Setup scaling controls
+                this.setupScalingControls();
+
+                // FPS control
+                this.setupFpsControl();
+
+                // Ring buffer control
+                this.setupRingBufferControl();
+
+                // Event rate control
+                this.setupEventRateControl();
+            }
+
+            setupScalingControls() {
+                const scalingControls = [
+                    { id: 'priceScale', valueId: 'priceScaleValue', suffix: 'x' },
+                    { id: 'volumeScale', valueId: 'volumeScaleValue', suffix: 'x' },
+                    { id: 'timeScale', valueId: 'timeScaleValue', suffix: 'x' },
+                    { id: 'voxelWidth', valueId: 'voxelWidthValue', suffix: '' }
+                ];
+
+                scalingControls.forEach(control => {
+                    const slider = document.getElementById(control.id);
+                    const valueDisplay = document.getElementById(control.valueId);
+
+                    if (slider && valueDisplay) {
+                        slider.addEventListener('input', (e) => {
+                            const value = parseFloat(e.target.value);
+                            valueDisplay.textContent = value.toFixed(3) + control.suffix;
+                            this.updateScaling();
+                        });
+                    }
+                });
+            }
+
+            setupFpsControl() {
+                const fpsSlider = document.getElementById('fpsControl');
+                const fpsValue = document.getElementById('fpsValue');
+
+                if (fpsSlider && fpsValue) {
+                    fpsSlider.addEventListener('input', (e) => {
+                        this.targetFps = parseInt(e.target.value, 10);
+                        fpsValue.textContent = this.targetFps;
+                    });
+                }
+            }
+
+            setupRingBufferControl() {
+                const rbSlider = document.getElementById('ringBufferSize');
+                const rbValue = document.getElementById('ringBufferValue');
+
+                if (rbSlider && rbValue) {
+                    rbSlider.addEventListener('input', (e) => {
+                        const size = parseInt(e.target.value, 10);
+                        rbValue.textContent = size;
+                        this.tracer.config.maxTimeSlices = size;
+                    });
+                }
+            }
+
+            setupEventRateControl() {
+                const erSlider = document.getElementById('eventRateSlider');
+                const erValue = document.getElementById('eventRateSliderValue');
+
+                if (erSlider && erValue) {
+                    erSlider.addEventListener('input', (e) => {
+                        const rate = parseInt(e.target.value, 10);
+                        erValue.textContent = rate;
+                        this.eventRate = rate;
+                        this.worker.postMessage({ type: 'setRate', rate });
+                    });
+
+                    // send initial rate
+                    this.worker.postMessage({ type: 'setRate', rate: parseInt(erSlider.value, 10) });
+                }
+            }
+
+            updateScaling() {
+                const priceScale = parseFloat(document.getElementById('priceScale').value);
+                const volumeScale = parseFloat(document.getElementById('volumeScale').value);
+                const timeScale = parseFloat(document.getElementById('timeScale').value);
+                const voxelWidth = parseFloat(document.getElementById('voxelWidth').value);
+
+                this.renderer3D.setScales(priceScale, volumeScale, timeScale, voxelWidth);
+            }
+
+            startAnimationLoop() {
+                const animate = (timestamp) => {
+                    if (timestamp - this.lastRenderTime >= 1000 / this.targetFps) {
+                        this.lastRenderTime = timestamp;
+                        this.frameCount++;
+
+                        const currentTime = performance.now();
+
+                        // Process events for this frame (batching)
+                        this.tracer.processEventsForFrame(currentTime);
+
+                        // Update 3D visualization
+                        const voxelData = this.tracer.getAllVoxels();
+                        this.renderer3D.updateVoxels(voxelData);
+                        this.renderer3D.render();
+
+                        // Update UI every 10 frames
+                        if (this.frameCount % 10 === 0) {
+                            this.updateUI();
+                        }
+
+                        // Cleanup old voxels every 60 frames
+                        if (this.frameCount % 60 === 0) {
+                            this.tracer.cleanupOldVoxels(); // rely solely on ring-buffer size
+                        }
+                    }
+
+                    requestAnimationFrame(animate);
+                };
+
+                requestAnimationFrame(animate);
+            }
+
+            updateUI() {
+                const tracerStats = this.tracer.getStats();
+
+                document.getElementById('l2Events').textContent = this.eventCount;
+                document.getElementById('eventRate').textContent = this.isRunning ? `${this.eventRate.toFixed(1)}/s` : '0.0/s';
+                document.getElementById('activeVoxels').textContent = tracerStats.activeVoxels;
+                document.getElementById('historicalVoxels').textContent = tracerStats.historicalVoxels;
+                document.getElementById('totalVoxels').textContent = tracerStats.totalVoxelsCreated;
+                document.getElementById('currentTime').textContent = Math.round(tracerStats.currentTime);
+
+                this.updateOrderbook();
+            }
+
+            updateOrderbook() {
+                if (!this.lastSnapshot) return;
+
+                const bids = [...this.lastSnapshot.bids].sort((a, b) => b.price - a.price).slice(0, 20);
+                const asks = [...this.lastSnapshot.asks].sort((a, b) => a.price - b.price).slice(0, 20);
+
+                const bidTable = document.getElementById('bidTable');
+                const askTable = document.getElementById('askTable');
+
+                if (!bidTable || !askTable) return;
+
+                // Build header
+                bidTable.innerHTML = '<tr><th>Bid Px</th><th>Size</th></tr>';
+                askTable.innerHTML = '<tr><th>Ask Px</th><th>Size</th></tr>';
+
+                bids.forEach(level => {
+                    const row = `<tr><td>${level.price.toFixed(3)}</td><td>${level.size.toFixed(1)}</td></tr>`;
+                    bidTable.insertAdjacentHTML('beforeend', row);
+                });
+
+                asks.forEach(level => {
+                    const row = `<tr><td>${level.price.toFixed(3)}</td><td>${level.size.toFixed(1)}</td></tr>`;
+                    askTable.insertAdjacentHTML('beforeend', row);
+                });
+            }
+        }
+
+        // Start the demo
+        window.addEventListener('load', () => {
+            new TracerDemo();
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,294 @@
+Below is a **step-by-step, field-by-field blueprint** you can hand straight to an implementation team—no matter whether they will write C++, JavaScript + three.js, TypeScript + regl, or Rust + wgpu.
+Everything is written in **plain algorithmic form** and split into layers:
+
+1. **Input message contract**
+2. **CPU-side ring-buffer layout**
+3. **Exact per-frame update algorithm**
+4. **Numerical ↔ visual normalisation** (how the int fields become metres / clip-space)
+5. **Vertex-shader mapping**
+6. **Driving uniforms (pan, zoom, thickness, etc.)**
+7. **GPU upload strategy**
+
+---
+
+## 1  Exchange-message contract (what the renderer consumes)
+
+The renderer sees *already aggregated* micro-batches.
+One micro-batch = “all book operations that share the same exchange timestamp `t`”.
+
+```text
+Batch = pair<t, L3BookEvent>
+L3BookEvent = { vector<PriceLevel> bids,  vector<PriceLevel> asks }
+
+PriceLevel  = { int price, vector<Order> orders }   // usually 1–2 orders
+Order       = { int volume }                        // price is inherited
+```
+
+### Chronology guarantee
+
+Batches arrive **strictly time-ascending** (`t₀ < t₁ < …`).
+Inside a `bids` / `asks` vector the price levels are sorted best-bid→deep-bid or best-ask→deep-ask.
+
+---
+
+## 2  CPU-side memory layout – one fixed “slot” per cube
+
+> *N* = capacity (e.g. **10 000 slots**)
+> Every array is length *N* unless noted.
+
+| array name | type      | **slot *i*** contains                                                                                                                                                                                                  | comment                                        |
+| ---------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `X`        | int32     | **age** already lived by the order ( `t_now – t_birth` )                                                                                                                                                               |                                                |
+| `XΔ`       | int32     | **lifetime**; total duration the cube should stretch along **X**                                                                                                                                                       |                                                |
+| `YZ_YZΔ`   | int32 × 4 | `{ Y, Z, ΔY, ΔZ }` as four consecutive ints<br> – `Y`   = price tick<br> – `Z`   = cumulative volume **after** inserting this order<br> – `ΔY` = price − previousPrice (same side)<br> – `ΔZ` = volume of *this* order |                                                |
+| `Meta`     | int32     | bit-flags: `1` = bid, `2` = ask, other bits free                                                                                                                                                                       | also doubles as *visibility* flag (`0` = free) |
+| `FrameId`  | int32     | id of last frame that wrote this slot, **-1 if free**                                                                                                                                                                  |                                                |
+
+Auxiliary **runtime variables** (scalar except where noted):
+
+```text
+head             // first slot that will receive new data this frame
+lastWriteCount   // #slots we overwrote last frame (for ageing in step 1)
+activeSlots[]    // dense vector of currently visible slot indices
+frameCounter     // monotonically increasing (rolls at 2³¹)
+lastNow          // wall-clock timestamp of previous renderFrame()
+```
+
+Everything is allocated once → **zero garbage, zero realloc**, ever.
+
+---
+
+## 3  Per-frame update algorithm (deterministic reference)
+
+```pseudo
+procedure renderFrame(now, batches[])      // now = wall-clock in ns or µs
+    Δt = now - lastNow
+
+    #---------------------------------------------------------------
+    # 1. Age every active cube (stretch in time)
+    #---------------------------------------------------------------
+    for i in activeSlots:
+        X[i]  += Δt         # its birth gets further back in time
+        XΔ[i] += Δt         # its lifetime grows
+
+    markDirty(X,  0, N)                         # whole array
+    markDirty(XΔ, headPrev, lastWriteCount)     # because we grew them
+
+    #---------------------------------------------------------------
+    # 2. Prepare variables for this frame
+    #---------------------------------------------------------------
+    writeCount       = 0
+    recentInsert[]   = []          # indices inserted *in this frame*
+    lastEventTime    = lastNow     # will advance while iterating
+
+    #---------------------------------------------------------------
+    # 3. Stream the fresh exchange batches (chronological order)
+    #---------------------------------------------------------------
+    for (batchTime, bookEvent) in batches:
+        gap = batchTime - lastEventTime
+        for i in recentInsert:     # stretch cubes made since last batch
+            XΔ[i] += gap
+        recentInsert.clear()
+
+        # -------- bids --------------------------------------------
+        for level in bookEvent.bids:
+            cumVolBid[level.price] += Σ volume of its orders
+            for order in level.orders:
+                i = (head + writeCount) mod N
+                if FrameId[i] ≠ -1: invalidateFrame(FrameId[i])
+                fillSlot(i,
+                         X   = now - batchTime,
+                         XΔ  = 0,
+                         Y   = level.price,
+                         Z   = cumVolBid[level.price],
+                         ΔY  = level.price - lastPriceBid,
+                         ΔZ  = order.volume,
+                         meta=1)
+                lastPriceBid  = level.price
+                FrameId[i]    = frameCounter
+                activeSlots   .append(i)
+                recentInsert  .append(i)
+                writeCount   += 1
+
+        # -------- asks (mirrored) ---------------------------------
+        for level in bookEvent.asks: … meta = 2, cumVolAsk …
+
+        lastEventTime = batchTime
+    end for batches
+
+    #---------------------------------------------------------------
+    # 4. Stretch cubes created in the last batch up to *now*
+    #---------------------------------------------------------------
+    gap = now - lastEventTime
+    for i in recentInsert: XΔ[i] += gap
+    markDirty(XΔ, head, writeCount)
+
+    #---------------------------------------------------------------
+    # 5. Upload every marked range (see §7)
+    #---------------------------------------------------------------
+    flushDirtyToGPU()
+
+    #---------------------------------------------------------------
+    # 6. House-keeping and advance ring pointer
+    #---------------------------------------------------------------
+    headPrev        = head
+    lastWriteCount  = writeCount
+    head            = (head + writeCount) mod N
+    frameCounter    = (frameCounter+1) mod 2^31
+    lastNow         = now
+end procedure
+```
+
+### `fillSlot()` (CPU helper)
+
+```pseudo
+fillSlot(i, X, XΔ, Y, Z, ΔY, ΔZ, meta):
+    X[i]                 = X
+    XΔ[i]                = XΔ
+    YZ_YZΔ[4*i+0 .. +3]  = {Y, Z, ΔY, ΔZ}
+    Meta[i]              = meta
+```
+
+### `invalidateFrame(fid)` (CPU helper)
+
+```pseudo
+for j in activeSlots:
+    if FrameId[j] == fid:
+        FrameId[j] = -1
+        Meta[j]    = 0
+        remove j from activeSlots
+```
+
+---
+
+## 4  Normalisation – turning raw ints into viewable world coordinates
+
+The vertex shader only understands **unit-less normalised numbers** roughly inside `[-1 … +1]`.
+We therefore convert every integer attribute with the formula:
+
+```
+norm(v) = ( v / scaleFactor  –  offset ) / diff
+```
+
+| axis        | raw field(s) | **scaleFactor**                          | **offset** (*uniform*) | **diff** (*uniform*) | effect              |
+| ----------- | ------------ | ---------------------------------------- | ---------------------- | -------------------- | ------------------- |
+| **X** time  | `X`, `XΔ`    | `bufferDuration = N × timeUnitsPerFrame` | `xOffset`              | `xDiff`              | pans / zooms time   |
+| **Y** price | `Y` , `ΔY`   | *1* (price already in ticks)             | `yOffset`              | `yDiff`              | pans / zooms price  |
+| **Z** vol   | `Z` , `ΔZ`   | *1* (units = shares)                     | `zOffset`              | `zDiff`              | pans / zooms volume |
+
+Typical choices
+
+```text
+xDiff   = visibleDuration / bufferDuration
+xOffset = firstTickYouWantToShow / bufferDuration
+yDiff   = visiblePriceRange
+yOffset = midPriceToCentreTheView
+zDiff   = visibleVolumeRange
+zOffset = 0 (start at book surface)
+```
+
+All **pan/zoom** operations are therefore **zero-copy**: only uniforms change, never the VBOs.
+
+---
+
+## 5  Vertex-shader recipe (language-neutral pseudocode)
+
+```glsl
+// ◆ constants from CPU side
+uniform float bufferDuration;   // = N * timeUnitsPerFrame
+uniform float xOffset, xDiff;
+uniform float yOffset, yDiff;
+uniform float zOffset, zDiff;
+uniform float pointSize;        // thickness of cube walls
+uniform mat4  view, projection;
+
+// ◆ per-instance attributes (ints coming from the VBO)
+in int   iX;       // age
+in int   iXDelta;  // lifetime
+in ivec4 iYZ;      // {Y, Z, ΔY, ΔZ}
+in int   iMeta;    // bid / ask flag
+
+// ◆ per-vertex attribute
+in vec3  inPos;    // local cube vertex in [-1,+1]^3
+
+void main() {
+    float xScale = float(iXDelta) / bufferDuration / xDiff;
+    float xPos   = (float(iX) / bufferDuration - xOffset) / xDiff;
+
+    float yPos   = (float(iYZ.x) - yOffset) / yDiff;
+    float zPos   = (float(iYZ.y) - zOffset) / zDiff;
+
+    vec3 world;
+    world.x = inPos.x * xScale      + (xPos - 0.5 * xScale); // left-anchored
+    world.y = inPos.y * pointSize   + yPos;
+    world.z = inPos.z * pointSize   + zPos;
+
+    gl_Position = projection * view * vec4(world, 1.);
+}
+```
+
+*Key design points*
+
+* **Left-anchored stretch**: subtracting `0.5 × xScale` ensures the cube grows only to the right (future) while its left face remains glued to the creation timestamp.
+* **Constant thickness on Y,Z** (`pointSize`) decouples visual thickness from volume; if you want physical height proportional to `ΔZ`, replace the two lines marked *pointSize* by:
+
+  ```glsl
+  float zScale = float(iYZ.w) / zDiff;     // ΔZ_norm
+  world.z = inPos.z * zScale + (zPos - 0.5 * zScale);
+  ```
+
+  …which will produce genuine stack thickness.
+
+---
+
+## 6  Uniform-update strategy
+
+| uniform          | updated when           | how to choose / compute                                  |
+| ---------------- | ---------------------- | -------------------------------------------------------- |
+| `bufferDuration` | never (constant)       | `N × timeUnitsPerFrame`                                  |
+| `pointSize`      | rarely (UI slider)     | 1 / #pixels-per-cube if you want screen-space constancy  |
+| `{x,y,z}Offset`  | on pan events          | in *normalised* units (divide by scaleFactor first)      |
+| `{x,y,z}Diff`    | on zoom events         | <1 = zoom-in, >1 = zoom-out                              |
+| `view`           | every camera move      | `lookAt()` for perspective or translate for orthographic |
+| `projection`     | on resize / FOV change | standard perspective or ortho matrix                     |
+
+Because pan/zoom are uniform-only, **scrubbing the timeline** or **scrolling price** is extremely cheap (no VBO change).
+
+---
+
+## 7  GPU upload protocol
+
+We keep one “dirty list” per array.
+Every time `markDirty(A, start, count)` is called, append that interval.
+Right before the draw call:
+
+```pseudo
+for A in {X, XΔ, YZ_YZΔ, Meta}:
+    mergeAdjacentDirtyRanges(A)           # optional micro-optimisation
+    for (s,c) in dirty[A]:
+        gpuBufferSubData(A, byteOffset=s*sizeof(A[0]), byteLength=c*sizeof(A[0]))
+    dirty[A].clear()
+```
+
+`gpuBufferSubData` is:
+
+* `wgpu::Queue::WriteBuffer` in WebGPU
+* `gl.bufferSubData` in WebGL2/OpenGL
+* `attribute.updateRange` + `needsUpdate=true` in three.js
+
+Worst case per frame = **two uploads per array** (wrap-around).
+280 kB × 4 arrays × 60 Hz = **67 MB/s** — trivial for PCIe4 or Web-GPU (<1 ms).
+
+---
+
+## 8  Performance invariants (must-keep rules)
+
+1. **Fixed-size SoA ring buffer** → no allocation, contiguous writes.
+2. **Dirty-range uploads** → PCIe traffic ∝ newMessages, *not* active orders.
+3. **One instanced draw call** → GPU submission overhead constant.
+4. **All pan/zoom in uniforms** → scrubbing is buffer-free.
+5. **CPU work O(Δm)** → scales linearly with *fresh L3 traffic*, not with book size.
+6. **Invalidate on overwrite, never compact** → keeps complexity trivial.
+
+Keep these rules and your re-write—be it JavaScript/three.js or Vulkan/GL—will match the throughput of the original C++/WebGPU reference while remaining completely GC-free and cache-efficient.
+

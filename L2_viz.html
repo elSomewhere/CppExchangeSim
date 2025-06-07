@@ -1,0 +1,1765 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L3 Orderbook Ring Buffer Visualization</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0a0a0a;
+            color: #00ff00;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+        }
+
+        .visualization {
+            flex: 1;
+            position: relative;
+        }
+
+        .controls {
+            width: 350px;
+            background-color: #1a1a1a;
+            padding: 16px;
+            overflow-y: auto;
+            border-left: 2px solid #333;
+        }
+
+        .controls h2 {
+            color: #00ffff;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 1px solid #333;
+            padding-bottom: 8px;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            padding: 12px;
+            background-color: #222;
+            border-radius: 6px;
+            border: 1px solid #444;
+        }
+
+        .section h3 {
+            color: #ffff00;
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .stat-item {
+            margin-bottom: 6px;
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .button {
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-bottom: 8px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+
+        .button-start {
+            background-color: #00aa00;
+            color: white;
+        }
+
+        .button-stop {
+            background-color: #aa0000;
+            color: white;
+        }
+
+        .button-reset {
+            background-color: #0066aa;
+            color: white;
+        }
+
+        .button-view {
+            background-color: #444488;
+            color: white;
+            margin-top: 4px;
+        }
+
+        .control-group {
+            margin-bottom: 10px;
+        }
+
+        .control-label {
+            display: block;
+            font-size: 11px;
+            margin-bottom: 4px;
+            color: #ccc;
+        }
+
+        .control-input {
+            width: 100%;
+            margin-bottom: 4px;
+        }
+
+        .control-checkbox-label {
+            font-size: 11px;
+            color: #ccc;
+            display: flex;
+            align-items: center;
+        }
+
+        .control-checkbox-label input {
+            margin-right: 6px;
+        }
+
+        .control-hint {
+            font-size: 10px;
+            color: #888;
+        }
+
+        .debug-info {
+            font-size: 10px;
+            color: #666;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: #111;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .orderbook-display {
+            font-size: 10px;
+            font-family: 'Courier New', monospace;
+            background-color: #111;
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+
+        .orderbook-header {
+            color: #00ffff;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 4px;
+        }
+
+        .orderbook-ask {
+            color: #ff6b6b;
+            margin-bottom: 2px;
+        }
+
+        .orderbook-bid {
+            color: #4ecdc4;
+            margin-bottom: 2px;
+        }
+
+        .orderbook-spread {
+            color: #888;
+            text-align: center;
+            margin: 8px 0;
+            border-top: 1px solid #333;
+            border-bottom: 1px solid #333;
+            padding: 4px 0;
+        }
+
+        .text-green {
+            color: #00ff00;
+        }
+
+        .text-red {
+            color: #ff4444;
+        }
+
+        .text-yellow {
+            color: #ffff00;
+        }
+
+        .text-cyan {
+            color: #00ffff;
+        }
+
+        .event-log-display {
+            font-size: 10px;
+            font-family: 'Courier New', monospace;
+            background-color: #111;
+            padding: 8px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 8px;
+        }
+
+        .event-log-header {
+            color: #00ffff;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 4px;
+        }
+
+        .event-log-entry {
+            margin-bottom: 2px;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-size: 9px;
+        }
+
+        .event-log-bid {
+            color: #4ecdc4;
+            background-color: rgba(78, 205, 196, 0.1);
+        }
+
+        .event-log-ask {
+            color: #ff6b6b;
+            background-color: rgba(255, 107, 107, 0.1);
+        }
+
+        .event-log-timestamp {
+            color: #888;
+            font-size: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="visualization" id="visualization"></div>
+
+        <div class="controls">
+            <h2>L3 RING BUFFER VIZ</h2>
+
+            <div class="section">
+                <h3>Buffer Statistics</h3>
+                <div class="stat-item">
+                    <span>Frame Counter:</span>
+                    <span id="frameCounter" class="text-cyan">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Update Start:</span>
+                    <span id="updateStart" class="text-yellow">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Update Length:</span>
+                    <span id="updateLength" class="text-yellow">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Active Orders:</span>
+                    <span id="activeOrders" class="text-green">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Buffer Usage:</span>
+                    <span id="bufferUsage" class="text-cyan">0%</span>
+                </div>
+                <div class="stat-item">
+                    <span>Events/sec:</span>
+                    <span id="eventsPerSec" class="text-green">0.0</span>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Market Data</h3>
+                <div class="stat-item">
+                    <span>Best Bid:</span>
+                    <span id="bestBid" class="text-green">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>Best Ask:</span>
+                    <span id="bestAsk" class="text-red">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>Mid Price:</span>
+                    <span id="midPrice" class="text-yellow">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>Spread:</span>
+                    <span id="spread" class="text-cyan">-</span>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Current Orderbook</h3>
+                <div class="orderbook-display" id="orderbookDisplay">
+                    <div class="orderbook-header">Price | Size | Orders</div>
+                    <div id="orderbookContent">Loading...</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Event Log</h3>
+                <div class="event-log-display" id="eventLogDisplay">
+                    <div class="event-log-header">Incoming L3 Events</div>
+                    <div id="eventLogContent">Waiting for events...</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Controls</h3>
+                <button id="toggleBtn" class="button button-start">Start Simulation</button>
+                <button id="resetBtn" class="button button-reset">Reset Buffer</button>
+            </div>
+
+            <div class="section">
+                <h3>Camera Controls</h3>
+                <div class="stat-item">
+                    <span>WASD:</span>
+                    <span class="text-cyan">Move</span>
+                </div>
+                <div class="stat-item">
+                    <span>Mouse:</span>
+                    <span class="text-cyan">Look Around</span>
+                </div>
+                <div class="stat-item">
+                    <span>QE:</span>
+                    <span class="text-cyan">Up/Down</span>
+                </div>
+                <div class="stat-item">
+                    <span>Shift:</span>
+                    <span class="text-cyan">Fast Move</span>
+                </div>
+                <div class="control-hint">Click visualization to capture mouse</div>
+            </div>
+
+            <div class="section">
+                <h3>Projection</h3>
+                <div class="control-group">
+                    <label class="control-checkbox-label">
+                        <input type="checkbox" id="useOrthographic"> Use Orthographic Projection
+                    </label>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Ortho Zoom: <span id="orthoZoomValue">2.0</span></label>
+                    <input type="range" id="orthoZoom" class="control-input" min="0.1" max="10" step="0.1" value="2.0">
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Fixed Views</h3>
+                <button id="viewFrontBtn" class="button button-view">Front (View Along +Z)</button>
+                <button id="viewTopBtn" class="button button-view">Top (View Along -Y)</button>
+                <button id="viewSideBtn" class="button button-view">Side (View Along +X)</button>
+            </div>
+
+            <div class="section">
+                <h3>Buffer Settings</h3>
+                <div class="control-group">
+                    <label class="control-label">Buffer Size: <span id="bufferSizeValue">100</span></label>
+                    <input type="range" id="bufferSize" class="control-input" min="50" max="500" step="50" value="100">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Events/Second: <span id="eventRateValue">10</span></label>
+                    <input type="range" id="eventRate" class="control-input" min="1" max="50" step="1" value="10">
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Visualization Scale</h3>
+                <div class="control-group">
+                    <label class="control-label">Point Size (Y): <span id="pointSizeValue">0.010</span></label>
+                    <input type="range" id="pointSize" class="control-input" min="0.001" max="0.1" step="0.001"
+                        value="0.01">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Time Scale (X): <span id="xDiffValue">1.00</span></label>
+                    <input type="range" id="xDiff" class="control-input" min="0.1" max="5.0" step="0.1" value="1.0">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Price Scale (Y): <span id="yDiffValue">0.50</span></label>
+                    <input type="range" id="yDiff" class="control-input" min="0.05" max="50" step="0.05" value="0.5">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Volume Scale (Z): <span id="zDiffValue">2000</span></label>
+                    <input type="range" id="zDiff" class="control-input" min="100" max="10000" step="100" value="2000">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Price Level Spread (Gen): <span
+                            id="priceSpreadValue">1.00</span></label>
+                    <input type="range" id="priceSpread" class="control-input" min="0.1" max="10.0" step="0.1"
+                        value="1.0">
+                    <div class="control-hint">Controls generator's price spacing</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Y-Offset Smoothing: <span
+                            id="yOffsetSmoothingValue">0.050</span></label>
+                    <input type="range" id="yOffsetSmoothing" class="control-input" min="0.005" max="0.5" step="0.005"
+                        value="0.05">
+                    <div class="control-hint">Smoothes mid-price centering (lower=smoother)</div>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Outline Opacity: <span id="outlineOpacityValue">0.50</span></label>
+                    <input type="range" id="outlineOpacity" class="control-input" min="0" max="1" step="0.05"
+                        value="0.5">
+                </div>
+            </div>
+
+            <div class="section">
+                <h3>Visualization Offset</h3>
+                <div class="control-group">
+                    <label class="control-label">Time Offset: <span id="xOffsetValue">0.00</span></label>
+                    <input type="range" id="xOffset" class="control-input" min="-1" max="1" step="0.1" value="0">
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Price Offset: <span id="yOffsetValue">Auto</span></label>
+                    <label class="control-checkbox-label">
+                        <input type="checkbox" id="yOffsetAuto" checked> Auto-center on mid price
+                    </label>
+                </div>
+                <div class="control-hint">Volume always starts at z=0</div>
+            </div>
+
+            <div class="section">
+                <h3>Debug Info</h3>
+                <div class="stat-item">
+                    <span>Time/Buffer:</span>
+                    <span id="timePerBuffer" class="text-cyan">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>Max Age:</span>
+                    <span id="maxAge" class="text-cyan">-</span>
+                </div>
+                <div id="debugInfo" class="debug-info">Ready...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================
+        // L3 Event Data Structures
+        // ================================
+
+        class LThreeBookEventSubElement {
+            constructor(orderId, volume) {
+                this.orderId = orderId;
+                this.volume = volume;
+            }
+        }
+
+        class LThreeBookEventElement {
+            constructor(price, orders) {
+                this.price = price;
+                this.orders = orders || [];
+            }
+        }
+
+        class LThreeBookEvent {
+            constructor(bids, asks) {
+                this.bids = bids || [];
+                this.asks = asks || [];
+            }
+        }
+
+        // ================================
+        // Current Orderbook State
+        // ================================
+
+        class OrderbookState {
+            constructor() {
+                this.bids = []; // Array of {price, orders: [{id, size, timestamp}]}
+                this.asks = []; // Array of {price, orders: [{id, size, timestamp}]}
+                this.nextOrderId = 1;
+            }
+
+            // Apply L3 event to current orderbook state
+            applyL3Event(l3Event) {
+                // Process bids
+                for (const bidLevel of l3Event.bids) {
+                    this.updatePriceLevel('bid', bidLevel.price, bidLevel.orders);
+                }
+
+                // Process asks
+                for (const askLevel of l3Event.asks) {
+                    this.updatePriceLevel('ask', askLevel.price, askLevel.orders);
+                }
+
+                // Sort and clean up
+                this.bids.sort((a, b) => b.price - a.price);
+                this.asks.sort((a, b) => a.price - b.price);
+                this.cleanupEmptyLevels();
+            }
+
+            updatePriceLevel(side, price, orders) {
+                const levels = side === 'bid' ? this.bids : this.asks;
+
+                // Find existing level
+                let level = levels.find(l => Math.abs(l.price - price) < 0.001);
+
+                if (orders.length === 0) {
+                    // Remove level if empty orders array
+                    if (level) {
+                        const index = levels.indexOf(level);
+                        levels.splice(index, 1);
+                    }
+                    return;
+                }
+
+                if (!level) {
+                    // Create new level
+                    level = { price, orders: [] };
+                    levels.push(level);
+                }
+
+                // Update orders in level
+                level.orders = orders.map(order => ({
+                    id: order.orderId,
+                    size: order.volume,
+                    timestamp: Date.now(),
+                    side: side
+                }));
+            }
+
+            cleanupEmptyLevels() {
+                this.bids = this.bids.filter(level => level.orders.length > 0);
+                this.asks = this.asks.filter(level => level.orders.length > 0);
+            }
+
+            // Retrieve the current array of orders at a given price level (side & price).
+            // Returns null if the level does not yet exist.
+            getOrdersAtPriceLevel(side, price) {
+                const levels = side === 'bid' ? this.bids : this.asks;
+                const level = levels.find(l => Math.abs(l.price - price) < 0.001);
+                return level ? level.orders : null;
+            }
+
+            getBestBid() {
+                return this.bids.length > 0 ? this.bids[0].price : 0;
+            }
+
+            getBestAsk() {
+                return this.asks.length > 0 ? this.asks[0].price : 0;
+            }
+
+            getMidPrice() {
+                const bestBid = this.getBestBid();
+                const bestAsk = this.getBestAsk();
+                if (bestBid > 0 && bestAsk > 0) {
+                    return (bestBid + bestAsk) / 2;
+                }
+                return bestBid > 0 ? bestBid : bestAsk;
+            }
+
+            getSpread() {
+                const bestBid = this.getBestBid();
+                const bestAsk = this.getBestAsk();
+                if (bestBid > 0 && bestAsk > 0) {
+                    return bestAsk - bestBid;
+                }
+                return 0;
+            }
+        }
+
+        // ================================
+        // Message Buffer (Ring Buffer)
+        // ================================
+
+        class MessageBuffer {
+            constructor(maxSize) {
+                this.maxSize = maxSize;
+                this.frameCounter = 0;
+                this.lastMessageTime = 0;
+                this.lastNow = 0;
+
+                this.DAT_X = new Int32Array(maxSize);
+                this.DAT_XDelta = new Int32Array(maxSize);
+                this.DAT_YZ_YZDelta = new Float32Array(4 * maxSize);
+                this.DAT_Meta = new Int32Array(maxSize);
+
+                this.frameDetailsMeta = new Array(maxSize);
+                this.activeIndicesMeta = [];
+
+                this.updateStart = 0;
+                this.updateLength = 0;
+
+                this.updateStartInvalidateMeta = 0;
+                this.updateLengthInvalidateMeta = 0;
+                this.updateTotalLengthMeta = 0;
+
+                this.lastTopBid = 0;
+                this.lastTopAsk = 0;
+                this.lastMid = 0;
+
+                this.initArrays();
+            }
+
+            initArrays() {
+                for (let i = 0; i < this.maxSize; i++) {
+                    this.DAT_Meta[i] = 0;
+                    this.DAT_X[i] = -1;
+                    this.DAT_XDelta[i] = -1;
+                    this.frameDetailsMeta[i] = { frameId: -1 };
+
+                    this.DAT_YZ_YZDelta[4 * i + 0] = -1;
+                    this.DAT_YZ_YZDelta[4 * i + 1] = -1;
+                    this.DAT_YZ_YZDelta[4 * i + 2] = -1;
+                    this.DAT_YZ_YZDelta[4 * i + 3] = -1;
+                }
+                this.activeIndicesMeta = [];
+                this.updateStart = 0;
+                this.updateLength = 0;
+                this.frameCounter = 0;
+                this.lastTopBid = 0;
+                this.lastTopAsk = 0;
+                this.lastMid = 0;
+                this.lastMessageTime = 0;
+                this.lastNow = 0;
+            }
+
+            insertFrame(frame, now, timeUnitsPerFrame, isSimRunning) {
+                this.frameCounter = (this.frameCounter + 1) % this.maxSize;
+
+                if (isSimRunning) {
+                    const timeDeltaSinceLastFrame = now - this.lastNow;
+                    if (timeDeltaSinceLastFrame > 0) {
+                        for (const index of this.activeIndicesMeta) {
+                            this.DAT_XDelta[index % this.maxSize] += timeDeltaSinceLastFrame;
+                        }
+                    }
+                }
+
+                this.updateTotalLengthMeta = 0;
+                this.updateLength = 0;
+
+                let lastInvalidatedFrameMetaStartsHere = 0;
+
+                if (frame.length > 0) {
+                    for (const [timestamp, l3Event] of frame) {
+                        let lastPriceBidInEvent = this.lastTopBid;
+                        if (l3Event.bids.length > 0 && l3Event.bids[0].price > 0) {
+                            this.lastTopBid = l3Event.bids[0].price;
+                            lastPriceBidInEvent = l3Event.bids[0].price;
+                        }
+
+                        for (const bidLevel of l3Event.bids) {
+                            let cumVolumeBid = 0;
+                            for (const order of bidLevel.orders) {
+                                const bufferIndex = (this.updateStart + this.updateLength) % this.maxSize;
+
+                                if (this.frameDetailsMeta[bufferIndex].frameId !== -1 && this.frameDetailsMeta[bufferIndex].frameId !== this.frameCounter) {
+                                    this.invalidateFrame(this.frameDetailsMeta[bufferIndex].frameId);
+                                    lastInvalidatedFrameMetaStartsHere = this.updateLength;
+                                }
+
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 0] = bidLevel.price;
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 1] = cumVolumeBid;
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 2] = bidLevel.price - lastPriceBidInEvent;
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 3] = order.volume;
+
+                                this.DAT_X[bufferIndex] = now - timestamp;
+                                this.DAT_XDelta[bufferIndex] = 0;
+                                this.DAT_Meta[bufferIndex] = 1;
+
+                                this.frameDetailsMeta[bufferIndex].frameId = this.frameCounter;
+                                if (!this.activeIndicesMeta.includes(bufferIndex)) {
+                                    this.activeIndicesMeta.push(bufferIndex);
+                                }
+                                this.updateLength++;
+                                cumVolumeBid += order.volume;
+                            }
+                            if (bidLevel.orders.length > 0) lastPriceBidInEvent = bidLevel.price;
+                        }
+
+                        let lastPriceAskInEvent = this.lastTopAsk;
+                        if (l3Event.asks.length > 0 && l3Event.asks[0].price > 0) {
+                            this.lastTopAsk = l3Event.asks[0].price;
+                            lastPriceAskInEvent = l3Event.asks[0].price;
+                        }
+
+                        for (const askLevel of l3Event.asks) {
+                            let cumVolumeAsk = 0;
+                            for (const order of askLevel.orders) {
+                                const bufferIndex = (this.updateStart + this.updateLength) % this.maxSize;
+
+                                if (this.frameDetailsMeta[bufferIndex].frameId !== -1 && this.frameDetailsMeta[bufferIndex].frameId !== this.frameCounter) {
+                                    this.invalidateFrame(this.frameDetailsMeta[bufferIndex].frameId);
+                                    lastInvalidatedFrameMetaStartsHere = this.updateLength;
+                                }
+
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 0] = askLevel.price;
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 1] = cumVolumeAsk;
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 2] = askLevel.price - lastPriceAskInEvent;
+                                this.DAT_YZ_YZDelta[bufferIndex * 4 + 3] = order.volume;
+
+                                this.DAT_X[bufferIndex] = now - timestamp;
+                                this.DAT_XDelta[bufferIndex] = 0;
+                                this.DAT_Meta[bufferIndex] = 2;
+
+                                this.frameDetailsMeta[bufferIndex].frameId = this.frameCounter;
+                                if (!this.activeIndicesMeta.includes(bufferIndex)) {
+                                    this.activeIndicesMeta.push(bufferIndex);
+                                }
+                                this.updateLength++;
+                                cumVolumeAsk += order.volume;
+                            }
+                            if (askLevel.orders.length > 0) lastPriceAskInEvent = askLevel.price;
+                        }
+
+                        if (this.lastTopBid > 0 && this.lastTopAsk > 0 && this.lastTopBid < this.lastTopAsk) {
+                            this.lastMid = (this.lastTopBid + this.lastTopAsk) / 2.0;
+                        } else if (this.lastTopBid > 0) {
+                            this.lastMid = this.lastTopBid;
+                        } else if (this.lastTopAsk > 0) {
+                            this.lastMid = this.lastTopAsk;
+                        }
+                    }
+
+                    this.updateTotalLengthMeta = Math.max(
+                        lastInvalidatedFrameMetaStartsHere + this.updateLengthInvalidateMeta,
+                        this.updateLength
+                    );
+                } else {
+                    this.updateTotalLengthMeta = this.updateLengthInvalidateMeta > 0 ? this.updateLengthInvalidateMeta : 0;
+                }
+
+                if (isSimRunning || frame.length > 0) {
+                    this.lastNow = now;
+                }
+            }
+
+            invalidateFrame(frameIdToInvalidate) {
+                let invalidatedCountInCurrentPass = 0;
+                const newActiveIndices = [];
+                for (let i = 0; i < this.activeIndicesMeta.length; i++) {
+                    const currentIndex = this.activeIndicesMeta[i];
+                    if (this.frameDetailsMeta[currentIndex].frameId === frameIdToInvalidate) {
+                        this.DAT_Meta[currentIndex] = 0;
+                        this.frameDetailsMeta[currentIndex].frameId = -1;
+                        invalidatedCountInCurrentPass++;
+                    } else {
+                        newActiveIndices.push(currentIndex);
+                    }
+                }
+                this.activeIndicesMeta = newActiveIndices;
+                this.updateLengthInvalidateMeta += invalidatedCountInCurrentPass;
+            }
+
+            updateBuffer() {
+                this.updateStart = (this.updateStart + this.updateLength) % this.maxSize;
+                this.updateLengthInvalidateMeta = 0;
+            }
+
+            getStats() {
+                return {
+                    frameCounter: this.frameCounter,
+                    updateStart: this.updateStart,
+                    updateLength: this.updateLength,
+                    activeOrders: this.activeIndicesMeta.length,
+                    bufferUsage: (this.activeIndicesMeta.length / this.maxSize * 100).toFixed(1),
+                    bestBid: this.lastTopBid,
+                    bestAsk: this.lastTopAsk,
+                    midPrice: this.lastMid,
+                    spread: (this.lastTopAsk > 0 && this.lastTopBid > 0 && this.lastTopAsk > this.lastTopBid) ? (this.lastTopAsk - this.lastTopBid) : 0
+                };
+            }
+        }
+
+        // ================================
+        // L3 Orderbook Renderer
+        // ================================
+
+        class L3OrderbookRenderer {
+            constructor(bufferSize = 100) {
+                this.bufferSize = bufferSize;
+                this.messageBuffer = new MessageBuffer(bufferSize);
+                this.orderbookState = new OrderbookState();
+                this.timeUnitsPerFrame = 16.67 * 1000000;
+                this.timeUnitsPerBufferSize = this.bufferSize * this.timeUnitsPerFrame;
+
+                this.yOffsetSmoothingFactor = 0.05;
+                this.outlineMaterial = null;
+
+                // Event logging
+                this.eventLog = [];
+                this.maxEventLogEntries = 100;
+
+                this.uniforms = {
+                    timeUnitsPerBufferSize: this.timeUnitsPerBufferSize,
+                    pointSize: 0.01,
+                    xDiff: 1.0,
+                    xOffset: 0.0,
+                    yDiff: 0.5,
+                    yOffset: 100.0,
+                    zDiff: 2000.0,
+                    zOffset: 0.0
+                };
+
+                this.cameraState = {
+                    position: new THREE.Vector3(-0.3, 0.15, 0.3),
+                    direction: new THREE.Vector3(),
+                    up: new THREE.Vector3(0, 1, 0),
+                    angles: { x: -0.2, y: -2.2 },
+                    speed: 0.01, fastSpeed: 0.03, mouseSensitivity: 0.002
+                };
+
+                this.keys = { w: false, a: false, s: false, d: false, q: false, e: false, shift: false };
+                this.mouse = { isLocked: false };
+
+                this.scene = null;
+                this.camera = null;
+                this.perspectiveCamera = null;
+                this.orthographicCamera = null;
+                this.renderer = null;
+                this.isOrthographic = false;
+                this.orthoFrustumSize = 2.0;
+
+                this.instancedMesh = null;
+                this.outlineInstancedMesh = null;
+
+                this.lastProcessedTime = 0; this.frameCount = 0; this.eventRate = 0;
+                this.lastEventCount = 0; this.lastRateTime = Date.now();
+
+                this.initThreeJS();
+                this.initControls();
+                this.updateCamera();
+            }
+
+            initThreeJS() {
+                const container = document.getElementById('visualization');
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x000014);
+
+                this.perspectiveCamera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.01, 100);
+
+                const aspect = container.clientWidth / container.clientHeight;
+                this.orthographicCamera = new THREE.OrthographicCamera(
+                    -this.orthoFrustumSize * aspect / 2, this.orthoFrustumSize * aspect / 2,
+                    this.orthoFrustumSize / 2, -this.orthoFrustumSize / 2,
+                    0.01, 100
+                );
+
+                this.camera = this.perspectiveCamera;
+                this.camera.position.copy(this.cameraState.position);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                container.appendChild(this.renderer.domElement);
+
+                // Create custom box geometry with separate faces for true flat shading
+                const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+                // Convert to non-indexed geometry so each face has its own vertices
+                const geometry = boxGeometry.toNonIndexed();
+
+                // Compute flat normals
+                geometry.computeVertexNormals();
+
+                const mainMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x00ff00,  // Green for testing
+                    flatShading: true
+                });
+
+                this.instancedMesh = new THREE.InstancedMesh(geometry, mainMaterial, this.bufferSize);
+
+                this.scene.add(this.instancedMesh);
+
+                const wireframeGeom = new THREE.WireframeGeometry(new THREE.BoxGeometry(1, 1, 1));
+                this.outlineMaterial = new THREE.LineBasicMaterial({
+                    color: 0xaaaaaa,
+                    transparent: true,
+                    opacity: 0.5
+                });
+                this.outlineInstancedMesh = new THREE.InstancedMesh(wireframeGeom, this.outlineMaterial, this.bufferSize);
+                this.scene.add(this.outlineInstancedMesh);
+
+                const axesHelper = new THREE.AxesHelper(0.5);
+                this.scene.add(axesHelper);
+
+                const gridHelperXY = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
+                this.scene.add(gridHelperXY);
+
+                // Add lighting for proper flat shading with depth
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+                this.scene.add(ambientLight);
+
+                // Use hemisphere light for better overall illumination
+                const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+                hemisphereLight.position.set(0, 1, 0);
+                this.scene.add(hemisphereLight);
+
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.4);
+                directionalLight.position.set(1, 1, 1);
+                this.scene.add(directionalLight);
+
+                window.addEventListener('resize', () => this.handleResize());
+            }
+
+            initControls() {
+                const container = document.getElementById('visualization');
+                document.addEventListener('keydown', (e) => {
+                    if (!this.mouse.isLocked && !['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight'].includes(e.code)) return;
+                    switch (e.code) {
+                        case 'KeyW': this.keys.w = true; break; case 'KeyA': this.keys.a = true; break;
+                        case 'KeyS': this.keys.s = true; break; case 'KeyD': this.keys.d = true; break;
+                        case 'KeyQ': this.keys.q = true; break; case 'KeyE': this.keys.e = true; break;
+                        case 'ShiftLeft': case 'ShiftRight': this.keys.shift = true; break;
+                    }
+                });
+                document.addEventListener('keyup', (e) => {
+                    switch (e.code) {
+                        case 'KeyW': this.keys.w = false; break; case 'KeyA': this.keys.a = false; break;
+                        case 'KeyS': this.keys.s = false; break; case 'KeyD': this.keys.d = false; break;
+                        case 'KeyQ': this.keys.q = false; break; case 'KeyE': this.keys.e = false; break;
+                        case 'ShiftLeft': case 'ShiftRight': this.keys.shift = false; break;
+                    }
+                });
+                container.addEventListener('click', () => container.requestPointerLock());
+                document.addEventListener('pointerlockchange', () => {
+                    this.mouse.isLocked = document.pointerLockElement === container;
+                });
+                document.addEventListener('mousemove', (e) => {
+                    if (!this.mouse.isLocked) return;
+                    this.cameraState.angles.y -= (e.movementX || 0) * this.cameraState.mouseSensitivity;
+                    this.cameraState.angles.x -= (e.movementY || 0) * this.cameraState.mouseSensitivity;
+                    this.cameraState.angles.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.cameraState.angles.x));
+                });
+
+                document.getElementById('viewFrontBtn').addEventListener('click', () => this.setFixedView('front'));
+                document.getElementById('viewTopBtn').addEventListener('click', () => this.setFixedView('top'));
+                document.getElementById('viewSideBtn').addEventListener('click', () => this.setFixedView('side'));
+
+                document.getElementById('useOrthographic').addEventListener('change', (e) => {
+                    this.setCameraProjection(e.target.checked);
+                });
+                document.getElementById('orthoZoom').addEventListener('input', (e) => {
+                    this.orthoFrustumSize = parseFloat(e.target.value);
+                    document.getElementById('orthoZoomValue').textContent = this.orthoFrustumSize.toFixed(1);
+                    if (this.isOrthographic) {
+                        this.updateOrthoFrustum();
+                    }
+                });
+            }
+
+            setCameraProjection(isOrthographic) {
+                this.isOrthographic = isOrthographic;
+
+                const currentPosition = new THREE.Vector3();
+                const currentQuaternion = new THREE.Quaternion();
+                this.camera.getWorldPosition(currentPosition);
+                this.camera.getWorldQuaternion(currentQuaternion);
+
+                if (this.isOrthographic) {
+                    this.camera = this.orthographicCamera;
+                    this.updateOrthoFrustum();
+                } else {
+                    this.camera = this.perspectiveCamera;
+                    this.perspectiveCamera.aspect = document.getElementById('visualization').clientWidth / document.getElementById('visualization').clientHeight;
+                    this.perspectiveCamera.updateProjectionMatrix();
+                }
+
+                this.camera.position.copy(currentPosition);
+                this.camera.quaternion.copy(currentQuaternion);
+                this.syncCameraStateFromThreeCamera();
+            }
+
+            updateOrthoFrustum() {
+                const container = document.getElementById('visualization');
+                const aspect = container.clientWidth / container.clientHeight;
+                this.orthographicCamera.left = -this.orthoFrustumSize * aspect / 2;
+                this.orthographicCamera.right = this.orthoFrustumSize * aspect / 2;
+                this.orthographicCamera.top = this.orthoFrustumSize / 2;
+                this.orthographicCamera.bottom = -this.orthoFrustumSize / 2;
+                this.orthographicCamera.near = 0.01;
+                this.orthographicCamera.far = 100;
+                this.orthographicCamera.updateProjectionMatrix();
+            }
+
+            getVizCenter() {
+                let yCenter = 0;
+                if (document.getElementById('yOffsetAuto').checked && this.messageBuffer.lastMid > 0) {
+                    yCenter = 0;
+                } else {
+                    yCenter = 0;
+                }
+                return new THREE.Vector3(
+                    this.uniforms.xOffset + 0.75 * this.uniforms.xDiff,
+                    yCenter,
+                    0.5
+                );
+            }
+
+            setFixedView(viewType) {
+                const target = this.getVizCenter();
+                const distance = 3;
+
+                switch (viewType) {
+                    case 'front':
+                        this.cameraState.position.set(target.x, target.y, target.z + distance);
+                        this.cameraState.up.set(0, 1, 0);
+                        break;
+                    case 'top':
+                        this.cameraState.position.set(target.x, target.y + distance, target.z);
+                        this.cameraState.up.set(0, 0, -1);
+                        break;
+                    case 'side':
+                        this.cameraState.position.set(target.x + distance, target.y, target.z);
+                        this.cameraState.up.set(0, 1, 0);
+                        break;
+                }
+
+                const direction = target.clone().sub(this.cameraState.position).normalize();
+                this.cameraState.angles.x = Math.asin(direction.y);
+                this.cameraState.angles.y = Math.atan2(direction.x, direction.z);
+
+                this.updateCamera();
+            }
+
+            syncCameraStateFromThreeCamera() {
+                this.cameraState.position.copy(this.camera.position);
+                this.camera.getWorldDirection(this.cameraState.direction);
+
+                this.cameraState.angles.x = Math.asin(this.cameraState.direction.y);
+
+                const cosPitch = Math.cos(this.cameraState.angles.x);
+                if (Math.abs(cosPitch) > 0.0001) {
+                    this.cameraState.angles.y = Math.atan2(this.cameraState.direction.x / cosPitch, this.cameraState.direction.z / cosPitch);
+                } else {
+                    const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+                    this.cameraState.angles.y = euler.y;
+                }
+            }
+
+            updateCamera() {
+                this.cameraState.direction.set(
+                    Math.cos(this.cameraState.angles.x) * Math.sin(this.cameraState.angles.y),
+                    Math.sin(this.cameraState.angles.x),
+                    Math.cos(this.cameraState.angles.x) * Math.cos(this.cameraState.angles.y)
+                ).normalize();
+
+                const forward = this.cameraState.direction;
+                const right = new THREE.Vector3().crossVectors(forward, this.cameraState.up).normalize();
+
+                const speed = (this.keys.shift ? this.cameraState.fastSpeed : this.cameraState.speed);
+
+                if (this.keys.w) this.cameraState.position.addScaledVector(forward, speed);
+                if (this.keys.s) this.cameraState.position.addScaledVector(forward, -speed);
+                if (this.keys.a) this.cameraState.position.addScaledVector(right, -speed);
+                if (this.keys.d) this.cameraState.position.addScaledVector(right, speed);
+
+                const upVector = this.cameraState.up.clone();
+                if (this.keys.e) this.cameraState.position.addScaledVector(upVector, speed);
+                if (this.keys.q) this.cameraState.position.addScaledVector(upVector, -speed);
+
+                this.camera.position.copy(this.cameraState.position);
+                this.camera.lookAt(this.cameraState.position.clone().add(this.cameraState.direction));
+                this.camera.up.copy(this.cameraState.up);
+            }
+
+            handleResize() {
+                const container = document.getElementById('visualization');
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+
+                this.perspectiveCamera.aspect = width / height;
+                this.perspectiveCamera.updateProjectionMatrix();
+
+                this.orthographicCamera.aspectR = width / height;
+                this.updateOrthoFrustum();
+
+                this.renderer.setSize(width, height);
+            }
+
+            // Create a new L3 event that contains only the subset of orders that need to be
+            // redrawn because a volume change occurred. For each price level we compare the
+            // incoming orders with the current OrderbookState and keep every order from the
+            // first difference onward. Orders that remain identical (same id & size) are not
+            // re-emitted so their existing bars stay untouched.
+            createDiffEvent(originalEvent) {
+                const diffEvent = new LThreeBookEvent();
+
+                const processSide = (sideKey, destArray) => {
+                    for (const lvl of originalEvent[sideKey]) {
+                        const prevOrders = this.orderbookState.getOrdersAtPriceLevel(sideKey.slice(0, 3), lvl.price);
+
+                        let changeIdx = 0;
+                        if (prevOrders && prevOrders.length > 0) {
+                            const minLen = Math.min(prevOrders.length, lvl.orders.length);
+                            changeIdx = minLen; // default: assume no change
+                            for (let i = 0; i < minLen; i++) {
+                                const prev = prevOrders[i];
+                                const incoming = lvl.orders[i];
+                                if (prev.id !== incoming.orderId || Math.abs(prev.size - incoming.volume) > 1e-6) {
+                                    changeIdx = i;
+                                    break;
+                                }
+                            }
+                            // If order counts differ (truncation or extension) treat first differing length as change point
+                            if (prevOrders.length !== lvl.orders.length && changeIdx === minLen) {
+                                changeIdx = minLen;
+                            }
+                        }
+
+                        if (changeIdx < lvl.orders.length) {
+                            const diffOrders = lvl.orders.slice(changeIdx);
+                            if (diffOrders.length > 0) {
+                                destArray.push(new LThreeBookEventElement(lvl.price, diffOrders));
+                            }
+                        }
+                    }
+                };
+
+                processSide('bids', diffEvent.bids);
+                processSide('asks', diffEvent.asks);
+
+                return diffEvent;
+            }
+
+            update(l3Events, currentTime, isSimRunning) {
+                const diffFrame = [];
+
+                for (const [timestamp, origEvent] of l3Events) {
+                    // Determine which orders actually changed and should spawn new bars
+                    const diffEvent = this.createDiffEvent(origEvent);
+                    if (diffEvent.bids.length > 0 || diffEvent.asks.length > 0) {
+                        diffFrame.push([timestamp, diffEvent]);
+                    }
+
+                    // Update the authoritative orderbook **after** we've generated the diff
+                    this.orderbookState.applyL3Event(origEvent);
+
+                    // Log the full original event for the UI panel
+                    this.logEvent(timestamp, origEvent);
+                }
+
+                this.messageBuffer.insertFrame(diffFrame, currentTime, this.timeUnitsPerFrame, isSimRunning);
+
+                this.updateVisualization();
+                this.updateOrderbookDisplay();
+                this.messageBuffer.updateBuffer();
+                this.updateStats();
+                this.frameCount++;
+            }
+
+            updateVisualization() {
+                const dummy = new THREE.Object3D();
+                const color = new THREE.Color();
+
+                if (document.getElementById('yOffsetAuto').checked) {
+                    const targetMidPrice = this.messageBuffer.lastMid;
+                    if (isFinite(targetMidPrice) && targetMidPrice > 0) {
+                        this.uniforms.yOffset += (targetMidPrice - this.uniforms.yOffset) * this.yOffsetSmoothingFactor;
+                    }
+                }
+
+                let instanceCount = 0;
+                for (const bufferIndex of this.messageBuffer.activeIndicesMeta) {
+                    const meta = this.messageBuffer.DAT_Meta[bufferIndex];
+                    if (meta === 0) continue;
+
+                    const orderAge = this.messageBuffer.DAT_XDelta[bufferIndex];
+                    const yPos = this.messageBuffer.DAT_YZ_YZDelta[bufferIndex * 4 + 0];
+                    const zCumulative = this.messageBuffer.DAT_YZ_YZDelta[bufferIndex * 4 + 1];
+                    const zDelta = this.messageBuffer.DAT_YZ_YZDelta[bufferIndex * 4 + 3];
+
+                    if (yPos <= 0 || zDelta <= 0) continue;
+
+                    const rightEdgePos = 1.0;
+                    const ageNorm = Math.max(0, orderAge / this.uniforms.timeUnitsPerBufferSize);
+                    const boxWidth = Math.max(0.001, ageNorm);
+                    const centerX = rightEdgePos - boxWidth / 2.0;
+
+                    const yPosNorm = (yPos - this.uniforms.yOffset) / this.uniforms.yDiff;
+
+                    const zStart = zCumulative / this.uniforms.zDiff;
+                    const zHeight = Math.max(0.001, zDelta / this.uniforms.zDiff);
+                    const centerZ = zStart + zHeight * 0.5;
+
+                    dummy.position.set(
+                        centerX * this.uniforms.xDiff + this.uniforms.xOffset,
+                        yPosNorm,
+                        centerZ
+                    );
+
+                    dummy.scale.set(
+                        boxWidth * this.uniforms.xDiff,
+                        this.uniforms.pointSize,
+                        zHeight
+                    );
+
+                    dummy.updateMatrix();
+                    this.instancedMesh.setMatrixAt(instanceCount, dummy.matrix);
+                    this.outlineInstancedMesh.setMatrixAt(instanceCount, dummy.matrix);
+
+                    // Temporarily disabled for testing
+                    /*
+                    if (meta === 1) { color.setHex(0x00CCAA); }
+                    else { color.setHex(0xFF6A6A); }
+                    this.instancedMesh.setColorAt(instanceCount, color);
+                    
+                    // Debug: log color setting for first few instances
+                    if (instanceCount < 3) {
+                        console.log(`Instance ${instanceCount}: meta=${meta}, color=${color.getHexString()}`);
+                    }
+                    */
+
+                    instanceCount++;
+                }
+
+                for (let i = instanceCount; i < Math.max(this.instancedMesh.count, this.outlineInstancedMesh.count); i++) {
+                    dummy.scale.set(0, 0, 0);
+                    dummy.updateMatrix();
+                    if (i < this.instancedMesh.count) this.instancedMesh.setMatrixAt(i, dummy.matrix);
+                    if (i < this.outlineInstancedMesh.count) this.outlineInstancedMesh.setMatrixAt(i, dummy.matrix);
+                }
+                this.instancedMesh.count = instanceCount;
+                this.outlineInstancedMesh.count = instanceCount;
+
+                this.instancedMesh.instanceMatrix.needsUpdate = true;
+                // Temporarily disabled for testing
+                /*
+                if (this.instancedMesh.instanceColor) {
+                    this.instancedMesh.instanceColor.needsUpdate = true;
+                }
+                */
+                this.outlineInstancedMesh.instanceMatrix.needsUpdate = true;
+
+                // Debug: log color buffer update status
+                if (instanceCount > 0 && this.frameCount % 60 === 0) { // Log every 60 frames to avoid spam
+                    console.log(`Updated ${instanceCount} instances, color buffer exists:`, !!this.instancedMesh.instanceColor);
+                }
+
+                this.updateDebugGrid();
+            }
+
+            updateOrderbookDisplay() {
+                const contentElement = document.getElementById('orderbookContent');
+                if (!contentElement) return;
+
+                let html = '';
+
+                // Show asks (in reverse order, highest first)
+                const visibleAsks = this.orderbookState.asks.slice(0, 10).reverse();
+                for (const level of visibleAsks) {
+                    const totalSize = level.orders.reduce((sum, order) => sum + order.size, 0);
+                    const ordersInfo = level.orders.map(o => o.size.toFixed(1)).join(',');
+                    html += `<div class="orderbook-ask">${level.price.toFixed(3)} | ${totalSize.toFixed(1)} | [${ordersInfo}]</div>`;
+                }
+
+                // Show spread
+                const bestBid = this.orderbookState.getBestBid();
+                const bestAsk = this.orderbookState.getBestAsk();
+                const spread = bestBid > 0 && bestAsk > 0 ? (bestAsk - bestBid).toFixed(3) : 'N/A';
+                html += `<div class="orderbook-spread">--- SPREAD: $${spread} ---</div>`;
+
+                // Show bids
+                const visibleBids = this.orderbookState.bids.slice(0, 10);
+                for (const level of visibleBids) {
+                    const totalSize = level.orders.reduce((sum, order) => sum + order.size, 0);
+                    const ordersInfo = level.orders.map(o => o.size.toFixed(1)).join(',');
+                    html += `<div class="orderbook-bid">${level.price.toFixed(3)} | ${totalSize.toFixed(1)} | [${ordersInfo}]</div>`;
+                }
+
+                contentElement.innerHTML = html;
+            }
+
+            logEvent(timestamp, l3Event) {
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString() + '.' + now.getMilliseconds().toString().padStart(3, '0');
+
+                // Process bids
+                for (const bidLevel of l3Event.bids) {
+                    const orderCount = bidLevel.orders.length;
+                    const totalVolume = bidLevel.orders.reduce((sum, order) => sum + order.volume, 0);
+
+                    let action = 'UPDATE';
+                    if (orderCount === 0) action = 'REMOVE';
+                    else if (totalVolume > 0) action = 'ADD/MOD';
+
+                    const logEntry = {
+                        timestamp: timeStr,
+                        side: 'BID',
+                        action: action,
+                        price: bidLevel.price.toFixed(3),
+                        volume: totalVolume.toFixed(1),
+                        orders: orderCount,
+                        type: 'bid'
+                    };
+
+                    this.eventLog.unshift(logEntry);
+                }
+
+                // Process asks
+                for (const askLevel of l3Event.asks) {
+                    const orderCount = askLevel.orders.length;
+                    const totalVolume = askLevel.orders.reduce((sum, order) => sum + order.volume, 0);
+
+                    let action = 'UPDATE';
+                    if (orderCount === 0) action = 'REMOVE';
+                    else if (totalVolume > 0) action = 'ADD/MOD';
+
+                    const logEntry = {
+                        timestamp: timeStr,
+                        side: 'ASK',
+                        action: action,
+                        price: askLevel.price.toFixed(3),
+                        volume: totalVolume.toFixed(1),
+                        orders: orderCount,
+                        type: 'ask'
+                    };
+
+                    this.eventLog.unshift(logEntry);
+                }
+
+                // Keep only the most recent entries
+                if (this.eventLog.length > this.maxEventLogEntries) {
+                    this.eventLog = this.eventLog.slice(0, this.maxEventLogEntries);
+                }
+
+                this.updateEventLogDisplay();
+            }
+
+            updateEventLogDisplay() {
+                const contentElement = document.getElementById('eventLogContent');
+                if (!contentElement) return;
+
+                let html = '';
+
+                for (const entry of this.eventLog.slice(0, 50)) { // Show only last 50 events
+                    const cssClass = entry.type === 'bid' ? 'event-log-bid' : 'event-log-ask';
+                    html += `<div class="event-log-entry ${cssClass}">`;
+                    html += `<span class="event-log-timestamp">[${entry.timestamp}]</span> `;
+                    html += `${entry.side} ${entry.action} @${entry.price} Vol:${entry.volume} Orders:${entry.orders}`;
+                    html += `</div>`;
+                }
+
+                if (html === '') {
+                    html = 'Waiting for events...';
+                }
+
+                contentElement.innerHTML = html;
+            }
+
+            updateDebugGrid() {
+                let gridGroup = this.scene.getObjectByName('ringBufferGrid');
+                if (gridGroup) {
+                    this.scene.remove(gridGroup);
+                    gridGroup.traverse(child => {
+                        if (child.geometry) child.geometry.dispose();
+                        if (child.material) child.material.dispose();
+                    });
+                }
+
+                gridGroup = new THREE.Group();
+                gridGroup.name = 'ringBufferGrid';
+
+                const lineMat = new THREE.LineBasicMaterial({ color: 0x333333, opacity: 0.3, transparent: true });
+                for (let i = 0; i <= 10; i++) {
+                    const x = (i / 10.0) * this.uniforms.xDiff + this.uniforms.xOffset;
+                    const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x, -0.5, 0), new THREE.Vector3(x, 0.5, 0)]);
+                    gridGroup.add(new THREE.Line(geom, lineMat));
+                }
+
+                const writePos = (1.0 * this.uniforms.xDiff) + this.uniforms.xOffset;
+                const writeGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(writePos, -0.5, 0), new THREE.Vector3(writePos, 0.5, 0)]);
+                gridGroup.add(new THREE.Line(writeGeom, new THREE.LineBasicMaterial({ color: 0x00ff00, opacity: 0.8, transparent: true })));
+
+                this.scene.add(gridGroup);
+            }
+
+            updateStats() {
+                const stats = this.messageBuffer.getStats();
+                const now = Date.now();
+                if (now - this.lastRateTime >= 1000) {
+                    this.eventRate = (this.frameCount - this.lastEventCount) / ((now - this.lastRateTime) / 1000);
+                    this.lastEventCount = this.frameCount; this.lastRateTime = now;
+                }
+
+                document.getElementById('frameCounter').textContent = stats.frameCounter;
+                document.getElementById('updateStart').textContent = stats.updateStart;
+                document.getElementById('updateLength').textContent = this.messageBuffer.updateLength;
+                document.getElementById('activeOrders').textContent = stats.activeOrders;
+                document.getElementById('bufferUsage').textContent = `${stats.bufferUsage}%`;
+                document.getElementById('eventsPerSec').textContent = this.eventRate.toFixed(1);
+
+                // Use orderbook state for more accurate market data
+                const bestBid = this.orderbookState.getBestBid();
+                const bestAsk = this.orderbookState.getBestAsk();
+                const midPrice = this.orderbookState.getMidPrice();
+                const spread = this.orderbookState.getSpread();
+
+                document.getElementById('bestBid').textContent = bestBid > 0 ? bestBid.toFixed(3) : '-';
+                document.getElementById('bestAsk').textContent = bestAsk > 0 ? bestAsk.toFixed(3) : '-';
+                document.getElementById('midPrice').textContent = midPrice > 0 ? midPrice.toFixed(3) : '-';
+                document.getElementById('spread').textContent = spread > 0 ? spread.toFixed(3) : '-';
+
+                document.getElementById('timePerBuffer').textContent = `${(this.timeUnitsPerBufferSize / 1000000).toFixed(0)}ms`;
+                let maxAge = 0;
+                this.messageBuffer.activeIndicesMeta.forEach(idx => {
+                    maxAge = Math.max(maxAge, this.messageBuffer.DAT_XDelta[idx]);
+                });
+                document.getElementById('maxAge').textContent = `${(maxAge / 1000000).toFixed(0)}ms`;
+            }
+
+            render() {
+                this.updateCamera();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            updateSettings(key, value) {
+                if (key === 'yOffsetSmoothingFactor') {
+                    this.yOffsetSmoothingFactor = parseFloat(value);
+                } else if (key === 'outlineOpacity') {
+                    if (this.outlineMaterial) {
+                        this.outlineMaterial.opacity = parseFloat(value);
+                    }
+                } else if (key in this.uniforms) {
+                    this.uniforms[key] = parseFloat(value);
+                    this.updateDebugGrid();
+                }
+            }
+
+            resize(newBufferSize) {
+                this.bufferSize = newBufferSize;
+                this.messageBuffer = new MessageBuffer(newBufferSize);
+                this.orderbookState = new OrderbookState();
+                this.timeUnitsPerBufferSize = this.bufferSize * this.timeUnitsPerFrame;
+                this.uniforms.timeUnitsPerBufferSize = this.timeUnitsPerBufferSize;
+
+                if (this.instancedMesh) {
+                    this.scene.remove(this.instancedMesh);
+                    if (this.instancedMesh.geometry) this.instancedMesh.geometry.dispose();
+                    if (this.instancedMesh.material) this.instancedMesh.material.dispose();
+                }
+
+                // Create custom box geometry with separate faces for true flat shading
+                const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+
+                // Convert to non-indexed geometry so each face has its own vertices
+                const geometry = boxGeometry.toNonIndexed();
+
+                // Compute flat normals
+                geometry.computeVertexNormals();
+
+                const mainMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x00ff00,  // Green for testing
+                    flatShading: true
+                });
+
+                this.instancedMesh = new THREE.InstancedMesh(geometry, mainMaterial, this.bufferSize);
+
+                this.scene.add(this.instancedMesh);
+
+                if (this.outlineInstancedMesh) {
+                    this.scene.remove(this.outlineInstancedMesh);
+                    if (this.outlineInstancedMesh.geometry) this.outlineInstancedMesh.geometry.dispose();
+                }
+                const newWireframeGeom = new THREE.WireframeGeometry(new THREE.BoxGeometry(1, 1, 1));
+                if (!this.outlineMaterial) {
+                    this.outlineMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: parseFloat(document.getElementById('outlineOpacity').value) });
+                }
+                this.outlineInstancedMesh = new THREE.InstancedMesh(newWireframeGeom, this.outlineMaterial, this.bufferSize);
+                this.scene.add(this.outlineInstancedMesh);
+                this.logDebug(`Buffer resized to ${newBufferSize}`);
+            }
+
+            reset() {
+                this.messageBuffer.initArrays();
+                this.orderbookState = new OrderbookState();
+
+                this.frameCount = 0; this.lastProcessedTime = 0;
+                this.eventRate = 0; this.lastEventCount = 0; this.lastRateTime = Date.now();
+
+                // Clear event log
+                this.eventLog = [];
+                this.updateEventLogDisplay();
+
+                if (this.instancedMesh) {
+                    this.instancedMesh.count = 0;
+                    this.instancedMesh.instanceMatrix.needsUpdate = true;
+                    // Temporarily disabled for testing
+                    /*
+                    if (this.instancedMesh.instanceColor) this.instancedMesh.instanceColor.needsUpdate = true;
+                    */
+                }
+                if (this.outlineInstancedMesh) {
+                    this.outlineInstancedMesh.count = 0;
+                    this.outlineInstancedMesh.instanceMatrix.needsUpdate = true;
+                }
+
+                if (document.getElementById('yOffsetAuto').checked) {
+                    this.uniforms.yOffset = this.messageBuffer.lastMid > 0 ? this.messageBuffer.lastMid : 100.0;
+                }
+
+                this.cameraState.position.set(-0.3, 0.15, 0.3);
+                this.cameraState.angles.x = -0.2;
+                this.cameraState.angles.y = -2.2;
+                this.cameraState.up.set(0, 1, 0);
+                this.updateCamera();
+
+                this.updateVisualization();
+                this.updateOrderbookDisplay();
+                this.logDebug('Buffer and view reset');
+            }
+
+            logDebug(message) {
+                const debugElement = document.getElementById('debugInfo');
+                const timestamp = new Date().toLocaleTimeString();
+                debugElement.innerHTML = `[${timestamp}] ${message}<br>` + debugElement.innerHTML.split('<br>').slice(0, 9).join('<br>');
+            }
+        }
+
+        // ================================
+        // Synthetic L3 Data Generator
+        // ================================
+
+        class SyntheticL3Generator {
+            constructor() {
+                this.nextOrderId = 1;
+                this.basePrice = 100.0;
+                this.spread = 0.05;
+                this.priceSpreadMultiplier = 1.0;
+                this.currentTimestamp = Date.now() * 1000000;
+            }
+
+            setPriceSpread(multiplier) { this.priceSpreadMultiplier = multiplier; }
+
+            generateEvents(count) {
+                const events = [];
+                for (let i = 0; i < count; i++) {
+                    const event = new LThreeBookEvent();
+                    const eventType = Math.random();
+
+                    if (eventType < 0.45) this.generateAddOrders(event);
+                    else if (eventType < 0.7) this.generateCancelOrders(event);
+                    else if (eventType < 0.9) this.generateFillOrders(event);
+                    else this.generateMarketSweep(event);
+
+                    this.currentTimestamp += Math.floor(Math.random() * 50000 + 5000);
+                    events.push([this.currentTimestamp, event]);
+                }
+                return events;
+            }
+
+            generateAddOrders(event) {
+                const side = Math.random() < 0.5 ? 'bid' : 'ask';
+                const numLevels = Math.floor(Math.random() * 3) + 1;
+                const levelIncrement = 0.01 * this.priceSpreadMultiplier;
+                let currentBase = this.basePrice;
+
+                for (let i = 0; i < numLevels; i++) {
+                    const price = parseFloat((side === 'bid'
+                        ? currentBase - this.spread / 2.0 - i * levelIncrement
+                        : currentBase + this.spread / 2.0 + i * levelIncrement).toFixed(3));
+                    if (price <= 0) continue;
+
+                    const numOrdersInLevel = Math.floor(Math.random() * 2) + 1;
+                    const orders = [];
+                    for (let j = 0; j < numOrdersInLevel; j++) {
+                        orders.push(new LThreeBookEventSubElement(this.nextOrderId++, parseFloat((Math.random() * 90 + 10).toFixed(2))));
+                    }
+
+                    const level = new LThreeBookEventElement(price, orders);
+                    if (side === 'bid') event.bids.push(level); else event.asks.push(level);
+                }
+
+                if (side === 'bid') event.bids.sort((a, b) => b.price - a.price);
+                else event.asks.sort((a, b) => a.price - b.price);
+
+                this.basePrice += (Math.random() - 0.5) * 0.005 * this.priceSpreadMultiplier;
+                this.basePrice = parseFloat(this.basePrice.toFixed(3));
+                if (this.basePrice <= 0) this.basePrice = 0.01;
+            }
+
+            generateCancelOrders(event) {
+                const side = Math.random() < 0.5 ? 'bid' : 'ask';
+                const price = parseFloat((side === 'bid'
+                    ? this.basePrice - this.spread / 2.0 - (Math.floor(Math.random() * 2) * 0.01 * this.priceSpreadMultiplier)
+                    : this.basePrice + this.spread / 2.0 + (Math.floor(Math.random() * 2) * 0.01 * this.priceSpreadMultiplier)
+                ).toFixed(3));
+                if (price <= 0) return;
+
+                const orders = Math.random() < 0.5 ? [] : [new LThreeBookEventSubElement(this.nextOrderId++, parseFloat((Math.random() * 5 + 1).toFixed(2)))];
+                const level = new LThreeBookEventElement(price, orders);
+                if (side === 'bid') event.bids.push(level); else event.asks.push(level);
+            }
+
+            generateFillOrders(event) {
+                const sideToFill = Math.random() < 0.5 ? 'ask' : 'bid';
+                const price = parseFloat((sideToFill === 'ask'
+                    ? this.basePrice + this.spread / 2.0
+                    : this.basePrice - this.spread / 2.0
+                ).toFixed(3));
+                if (price <= 0) return;
+
+                const orders = [new LThreeBookEventSubElement(this.nextOrderId++, parseFloat((Math.random() * 30 + 20).toFixed(2)))];
+                const level = new LThreeBookEventElement(price, orders);
+
+                if (sideToFill === 'ask') event.bids.push(level);
+                else event.asks.push(level);
+
+                this.basePrice += (Math.random() - 0.5) * 0.02 * this.priceSpreadMultiplier;
+                this.basePrice = parseFloat(this.basePrice.toFixed(3));
+                if (this.basePrice <= 0) this.basePrice = 0.01;
+            }
+
+            generateMarketSweep(event) {
+                const side = Math.random() < 0.5 ? 'bid' : 'ask';
+                const numLevelsToSweep = Math.floor(Math.random() * 2) + 1;
+                const levelIncrement = 0.01 * this.priceSpreadMultiplier;
+
+                for (let i = 0; i < numLevelsToSweep; i++) {
+                    const price = parseFloat((side === 'bid'
+                        ? this.basePrice + this.spread / 2.0 + i * levelIncrement
+                        : this.basePrice - this.spread / 2.0 - i * levelIncrement
+                    ).toFixed(3));
+                    if (price <= 0) continue;
+
+                    const orders = [new LThreeBookEventSubElement(this.nextOrderId++, parseFloat((Math.random() * 70 + 30).toFixed(2)))];
+                    const level = new LThreeBookEventElement(price, orders);
+                    if (side === 'bid') event.bids.push(level); else event.asks.push(level);
+                }
+                if (side === 'bid') event.bids.sort((a, b) => b.price - a.price);
+                else event.asks.sort((a, b) => a.price - b.price);
+            }
+        }
+
+        // ================================
+        // Main Application
+        // ================================
+
+        class L3VisualizationApp {
+            constructor() {
+                this.renderer = new L3OrderbookRenderer(100);
+                this.generator = new SyntheticL3Generator();
+                this.isRunning = false; this.animationId = null;
+                this.lastFrameTime = Date.now() * 1000000;
+                this.targetEventRate = 10;
+                this.eventAccumulator = 0;
+
+                this.setupEventListeners();
+                this.startRenderLoop();
+                this.renderer.logDebug("App initialized.");
+            }
+
+            setupEventListeners() {
+                document.getElementById('toggleBtn').addEventListener('click', () => this.toggleSimulation());
+                document.getElementById('resetBtn').addEventListener('click', () => this.reset());
+
+                const settingsMap = {
+                    'bufferSize': (v) => {
+                        this.renderer.resize(parseInt(v));
+                        this.renderer.logDebug(`Buffer size set to ${v}`);
+                    },
+                    'eventRate': (v) => this.targetEventRate = parseInt(v),
+                    'pointSize': (v) => this.renderer.updateSettings('pointSize', v),
+                    'xDiff': (v) => this.renderer.updateSettings('xDiff', v),
+                    'yDiff': (v) => this.renderer.updateSettings('yDiff', v),
+                    'zDiff': (v) => this.renderer.updateSettings('zDiff', v),
+                    'xOffset': (v) => this.renderer.updateSettings('xOffset', v),
+                    'priceSpread': (v) => this.generator.setPriceSpread(parseFloat(v)),
+                    'yOffsetSmoothing': (v) => this.renderer.updateSettings('yOffsetSmoothingFactor', v),
+                    'outlineOpacity': (v) => this.renderer.updateSettings('outlineOpacity', v)
+                };
+
+                Object.entries(settingsMap).forEach(([id, handler]) => {
+                    const element = document.getElementById(id);
+                    if (element) {
+                        const displayElement = document.getElementById(id + 'Value');
+                        const updateDisplay = (val) => {
+                            if (displayElement) {
+                                let formattedValue = val; const floatVal = parseFloat(val);
+                                if (id === 'pointSize' || id === 'yOffsetSmoothing') formattedValue = floatVal.toFixed(3);
+                                else if (id === 'outlineOpacity' || id === 'orthoZoom') formattedValue = floatVal.toFixed(2);
+                                else if (['xDiff', 'yDiff', 'priceSpread', 'xOffset'].includes(id)) formattedValue = floatVal.toFixed(2);
+                                else formattedValue = parseFloat(val).toFixed(0);
+                                displayElement.textContent = formattedValue;
+                            }
+                        };
+                        element.addEventListener('input', (e) => { handler(e.target.value); updateDisplay(e.target.value); });
+                        updateDisplay(element.value);
+                    }
+                });
+
+                document.getElementById('yOffsetAuto').addEventListener('change', (e) => {
+                    const yOffValEl = document.getElementById('yOffsetValue');
+                    if (e.target.checked) {
+                        yOffValEl.textContent = 'Auto';
+                    } else {
+                        yOffValEl.textContent = this.renderer.uniforms.yOffset.toFixed(2);
+                    }
+                });
+
+                const orthoZoomSlider = document.getElementById('orthoZoom');
+                document.getElementById('orthoZoomValue').textContent = parseFloat(orthoZoomSlider.value).toFixed(1);
+            }
+
+            toggleSimulation() {
+                this.isRunning = !this.isRunning;
+                const btn = document.getElementById('toggleBtn');
+                btn.textContent = this.isRunning ? 'Stop Simulation' : 'Start Simulation';
+                btn.className = `button ${this.isRunning ? 'button-stop' : 'button-start'}`;
+                this.renderer.logDebug(`Simulation ${this.isRunning ? 'started' : 'stopped'}`);
+
+                if (!this.isRunning) {
+                    this.renderer.messageBuffer.lastNow = Date.now() * 1000000;
+                }
+            }
+
+            reset() {
+                const wasRunning = this.isRunning;
+                if (wasRunning) this.toggleSimulation();
+
+                const bufferSizeSlider = document.getElementById('bufferSize');
+                this.renderer.resize(parseInt(bufferSizeSlider.value));
+                this.renderer.reset();
+
+                this.generator = new SyntheticL3Generator();
+                const priceSpreadSlider = document.getElementById('priceSpread');
+                if (priceSpreadSlider) {
+                    this.generator.setPriceSpread(parseFloat(priceSpreadSlider.value));
+                }
+
+                this.lastFrameTime = Date.now() * 1000000; this.eventAccumulator = 0;
+
+                const btn = document.getElementById('toggleBtn');
+                btn.textContent = 'Start Simulation'; btn.className = 'button button-start';
+                this.renderer.logDebug('System reset.');
+            }
+
+            startRenderLoop() {
+                const animate = () => {
+                    this.animationId = requestAnimationFrame(animate);
+                    const currentTime = Date.now() * 1000000;
+                    const deltaTimeSeconds = (currentTime - this.lastFrameTime) / 1000000000.0;
+
+                    let l3Events = [];
+                    let currentSimRunningState = this.isRunning;
+
+                    if (currentSimRunningState && deltaTimeSeconds > 0) {
+                        this.eventAccumulator += this.targetEventRate * deltaTimeSeconds;
+                        const eventsToGenerate = Math.floor(this.eventAccumulator);
+                        if (eventsToGenerate > 0) {
+                            this.eventAccumulator -= eventsToGenerate;
+                            l3Events = this.generator.generateEvents(eventsToGenerate);
+                        }
+                    }
+                    this.renderer.update(l3Events, currentTime, currentSimRunningState);
+                    this.renderer.render();
+                    this.lastFrameTime = currentTime;
+                };
+                animate();
+            }
+        }
+
+        window.addEventListener('load', () => { new L3VisualizationApp(); });
+
+    </script>
+</body>
+
+</html>
